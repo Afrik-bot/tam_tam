@@ -14,9 +14,6 @@ void main() async {
     debugPrint('Failed to initialize Supabase: $e');
   }
 
-  // Initialize Supabase
-  await SupabaseService.instance.initialize();
-
   runApp(const TamTamApp());
 }
 
@@ -25,17 +22,22 @@ class TamTamApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Sizer(builder: (context, orientation, deviceType) {
-      return MediaQuery(
-          data: MediaQuery.of(context)
-              .copyWith(textScaler: TextScaler.linear(1.0)),
+    return Sizer(
+      builder: (context, orientation, deviceType) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(1.0),
+          ),
           child: MaterialApp(
-              title: 'Tam Tam',
-              debugShowCheckedModeBanner: false,
-              theme: AppTheme.lightTheme,
-              darkTheme: AppTheme.darkTheme,
-              themeMode: ThemeMode.dark,
-              routes: AppRoutes.routes));
-    });
+            title: 'Tam Tam',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: ThemeMode.light,
+            routes: AppRoutes.routes,
+          ),
+        );
+      },
+    );
   }
 }

@@ -24,8 +24,7 @@ class SocialSignupButtons extends StatelessWidget {
             Expanded(
               child: Container(
                 height: 1,
-                color: AppTheme.lightTheme.colorScheme.outline
-                    .withValues(alpha: 0.3),
+                color: AppTheme.lightTheme.colorScheme.outline.withAlpha(77),
               ),
             ),
             Padding(
@@ -40,8 +39,7 @@ class SocialSignupButtons extends StatelessWidget {
             Expanded(
               child: Container(
                 height: 1,
-                color: AppTheme.lightTheme.colorScheme.outline
-                    .withValues(alpha: 0.3),
+                color: AppTheme.lightTheme.colorScheme.outline.withAlpha(77),
               ),
             ),
           ],
@@ -55,8 +53,8 @@ class SocialSignupButtons extends StatelessWidget {
               icon: 'g_translate',
               label: 'Google',
               backgroundColor: Colors.white,
-              borderColor: AppTheme.lightTheme.colorScheme.outline
-                  .withValues(alpha: 0.3),
+              borderColor:
+                  AppTheme.lightTheme.colorScheme.outline.withAlpha(77),
               textColor: AppTheme.lightTheme.colorScheme.onSurface,
             ),
             _buildSocialButton(

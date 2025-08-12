@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sizer/sizer.dart';
 
 import '../../../core/app_export.dart';
+import '../../../theme/app_theme.dart';
 
 class RegistrationForm extends StatefulWidget {
   final GlobalKey<FormState> formKey;
@@ -59,16 +61,6 @@ class RegistrationForm extends StatefulWidget {
 
 class _RegistrationFormState extends State<RegistrationForm> {
   bool _isPasswordVisible = false;
-  final List<Map<String, String>> _countryCodes = [
-    {'code': '+1', 'country': 'US'},
-    {'code': '+44', 'country': 'UK'},
-    {'code': '+234', 'country': 'NG'},
-    {'code': '+91', 'country': 'IN'},
-    {'code': '+55', 'country': 'BR'},
-    {'code': '+86', 'country': 'CN'},
-    {'code': '+81', 'country': 'JP'},
-    {'code': '+82', 'country': 'KR'},
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +77,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
           SizedBox(height: 2.h),
           _buildPasswordField(),
           SizedBox(height: 2.h),
-          _buildDatePicker(),
+          _buildBirthDateField(),
           SizedBox(height: 3.h),
           _buildTermsCheckbox(),
         ],
@@ -100,174 +92,184 @@ class _RegistrationFormState extends State<RegistrationForm> {
         TextFormField(
           controller: widget.usernameController,
           onChanged: widget.onUsernameChanged,
-          keyboardType: TextInputType.text,
-          textInputAction: TextInputAction.next,
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9_]')),
+            LengthLimitingTextInputFormatter(30),
+          ],
           decoration: InputDecoration(
-            labelText: 'Username',
+            labelText: 'Username *',
             hintText: 'Enter your username',
-            prefixIcon: CustomIconWidget(
-              iconName: 'person',
-              color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
-              size: 20,
+            prefixIcon: const Icon(Icons.person_outline),
+            suffixIcon: _buildUsernameStatusIcon(),
+            errorText: widget.usernameError,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            suffixIcon: widget.isCheckingUsername
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: Padding(
-                      padding: EdgeInsets.all(3.w),
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppTheme.lightTheme.colorScheme.primary,
-                      ),
-                    ),
-                  )
-                : widget.usernameController.text.isNotEmpty
-                    ? CustomIconWidget(
-                        iconName: widget.isUsernameAvailable
-                            ? 'check_circle'
-                            : 'cancel',
-                        color: widget.isUsernameAvailable
-                            ? Colors.green
-                            : AppTheme.lightTheme.colorScheme.error,
-                        size: 20,
-                      )
-                    : null,
+            filled: true,
+            fillColor: AppTheme.lightTheme.colorScheme.surfaceContainerHighest
+                .withAlpha(26),
           ),
           validator: (value) {
-            if (value == null || value.isEmpty) {
+            if (value == null || value.trim().isEmpty) {
               return 'Username is required';
             }
             if (value.length < 3) {
               return 'Username must be at least 3 characters';
             }
+            if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value)) {
+              return 'Username can only contain letters, numbers, and underscores';
+            }
             return null;
           },
         ),
-        if (widget.usernameError != null) ...[
-          SizedBox(height: 0.5.h),
-          Text(
-            widget.usernameError!,
-            style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
-              color: AppTheme.lightTheme.colorScheme.error,
+        if (widget.usernameController.text.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(top: 0.5.h, left: 1.w),
+            child: Text(
+              widget.isCheckingUsername
+                  ? 'Checking availability...'
+                  : widget.isUsernameAvailable
+                      ? '✓ Username is available'
+                      : widget.usernameError ?? '',
+              style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
+                color: widget.isCheckingUsername
+                    ? AppTheme.lightTheme.colorScheme.onSurfaceVariant
+                    : widget.isUsernameAvailable
+                        ? Colors.green
+                        : AppTheme.lightTheme.colorScheme.error,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-        ],
       ],
     );
   }
 
-  Widget _buildEmailField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextFormField(
-          controller: widget.emailController,
-          onChanged: widget.onEmailChanged,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
-            labelText: 'Email',
-            hintText: 'Enter your email',
-            prefixIcon: CustomIconWidget(
-              iconName: 'email',
-              color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
-              size: 20,
+  Widget? _buildUsernameStatusIcon() {
+    if (widget.isCheckingUsername) {
+      return Padding(
+        padding: EdgeInsets.all(2.w),
+        child: SizedBox(
+          width: 4.w,
+          height: 4.w,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(
+              AppTheme.lightTheme.colorScheme.primary,
             ),
           ),
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Email is required';
-            }
-            if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-              return 'Please enter a valid email';
-            }
-            return null;
-          },
         ),
-        if (widget.emailError != null) ...[
-          SizedBox(height: 0.5.h),
-          Text(
-            widget.emailError!,
-            style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
-              color: AppTheme.lightTheme.colorScheme.error,
-            ),
-          ),
-        ],
-      ],
+      );
+    }
+
+    if (widget.usernameController.text.isNotEmpty) {
+      return Icon(
+        widget.isUsernameAvailable ? Icons.check_circle : Icons.error,
+        color: widget.isUsernameAvailable
+            ? Colors.green
+            : AppTheme.lightTheme.colorScheme.error,
+        size: 5.w,
+      );
+    }
+
+    return null;
+  }
+
+  Widget _buildEmailField() {
+    return TextFormField(
+      controller: widget.emailController,
+      onChanged: widget.onEmailChanged,
+      keyboardType: TextInputType.emailAddress,
+      decoration: InputDecoration(
+        labelText: 'Email *',
+        hintText: 'Enter your email',
+        prefixIcon: const Icon(Icons.email_outlined),
+        errorText: widget.emailError,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        filled: true,
+        fillColor: AppTheme.lightTheme.colorScheme.surfaceContainerHighest
+            .withAlpha(26),
+      ),
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'Email is required';
+        }
+        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+          return 'Please enter a valid email address';
+        }
+        return null;
+      },
     );
   }
 
   Widget _buildPhoneField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Row(
-          children: [
-            Container(
-              width: 25.w,
-              child: DropdownButtonFormField<String>(
-                value: widget.selectedCountryCode,
-                decoration: InputDecoration(
-                  labelText: 'Code',
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 3.w, vertical: 2.h),
-                ),
-                items: _countryCodes.map((country) {
-                  return DropdownMenuItem<String>(
-                    value: country['code'],
-                    child: Text(
-                      '${country['code']} ${country['country']}',
-                      style: AppTheme.lightTheme.textTheme.bodyMedium,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    widget.onCountryCodeChanged(value);
-                  }
-                },
+        Container(
+          width: 20.w,
+          child: DropdownButtonFormField<String>(
+            value: widget.selectedCountryCode,
+            onChanged: (String? newValue) {
+              if (newValue != null) {
+                widget.onCountryCodeChanged(newValue);
+              }
+            },
+            decoration: InputDecoration(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
+              filled: true,
+              fillColor: AppTheme.lightTheme.colorScheme.surfaceContainerHighest
+                  .withAlpha(26),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 2.w, vertical: 2.h),
             ),
-            SizedBox(width: 2.w),
-            Expanded(
-              child: TextFormField(
-                controller: widget.phoneController,
-                onChanged: widget.onPhoneChanged,
-                keyboardType: TextInputType.phone,
-                textInputAction: TextInputAction.next,
-                decoration: InputDecoration(
-                  labelText: 'Phone Number',
-                  hintText: 'Enter phone number',
-                  prefixIcon: CustomIconWidget(
-                    iconName: 'phone',
-                    color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
-                    size: 20,
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Phone number is required';
-                  }
-                  if (value.length < 10) {
-                    return 'Please enter a valid phone number';
-                  }
-                  return null;
-                },
-              ),
-            ),
-          ],
-        ),
-        if (widget.phoneError != null) ...[
-          SizedBox(height: 0.5.h),
-          Text(
-            widget.phoneError!,
-            style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
-              color: AppTheme.lightTheme.colorScheme.error,
-            ),
+            items: const [
+              DropdownMenuItem(value: '+1', child: Text('+1')),
+              DropdownMenuItem(value: '+44', child: Text('+44')),
+              DropdownMenuItem(value: '+91', child: Text('+91')),
+              DropdownMenuItem(value: '+86', child: Text('+86')),
+              DropdownMenuItem(value: '+81', child: Text('+81')),
+            ],
           ),
-        ],
+        ),
+        SizedBox(width: 2.w),
+        Expanded(
+          child: TextFormField(
+            controller: widget.phoneController,
+            onChanged: widget.onPhoneChanged,
+            keyboardType: TextInputType.phone,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(15),
+            ],
+            decoration: InputDecoration(
+              labelText: 'Phone Number',
+              hintText: 'Enter phone number',
+              prefixIcon: const Icon(Icons.phone_outlined),
+              errorText: widget.phoneError,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              filled: true,
+              fillColor: AppTheme.lightTheme.colorScheme.surfaceContainerHighest
+                  .withAlpha(26),
+            ),
+            validator: (value) {
+              if (value != null && value.isNotEmpty) {
+                if (value.length < 10) {
+                  return 'Phone number must be at least 10 digits';
+                }
+                if (!RegExp(r'^\d+$').hasMatch(value)) {
+                  return 'Please enter only numbers';
+                }
+              }
+              return null;
+            },
+          ),
+        ),
       ],
     );
   }
@@ -280,161 +282,148 @@ class _RegistrationFormState extends State<RegistrationForm> {
           controller: widget.passwordController,
           onChanged: widget.onPasswordChanged,
           obscureText: !_isPasswordVisible,
-          textInputAction: TextInputAction.done,
           decoration: InputDecoration(
-            labelText: 'Password',
-            hintText: 'Enter your password',
-            prefixIcon: CustomIconWidget(
-              iconName: 'lock',
-              color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
-              size: 20,
-            ),
-            suffixIcon: GestureDetector(
-              onTap: () {
+            labelText: 'Password *',
+            hintText: 'Create a password',
+            prefixIcon: const Icon(Icons.lock_outline),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+              ),
+              onPressed: () {
                 setState(() {
                   _isPasswordVisible = !_isPasswordVisible;
                 });
               },
-              child: CustomIconWidget(
-                iconName: _isPasswordVisible ? 'visibility_off' : 'visibility',
-                color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
-                size: 20,
-              ),
             ),
+            errorText: widget.passwordError,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            filled: true,
+            fillColor: AppTheme.lightTheme.colorScheme.surfaceContainerHighest
+                .withAlpha(26),
           ),
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'Password is required';
             }
-            if (value.length < 8) {
-              return 'Password must be at least 8 characters';
+            if (value.length < 6) {
+              return 'Password must be at least 6 characters';
             }
             return null;
           },
         ),
-        if (widget.passwordController.text.isNotEmpty) ...[
-          SizedBox(height: 1.h),
-          _buildPasswordStrengthIndicator(),
-        ],
-        if (widget.passwordError != null) ...[
-          SizedBox(height: 0.5.h),
-          Text(
-            widget.passwordError!,
-            style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
-              color: AppTheme.lightTheme.colorScheme.error,
+        if (widget.passwordController.text.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(top: 1.h),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LinearProgressIndicator(
+                  value: widget.passwordStrength,
+                  backgroundColor:
+                      AppTheme.lightTheme.colorScheme.outline.withAlpha(77),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    _getPasswordStrengthColor(),
+                  ),
+                ),
+                SizedBox(height: 0.5.h),
+                Text(
+                  _getPasswordStrengthText(),
+                  style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
+                    color: _getPasswordStrengthColor(),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
       ],
     );
   }
 
-  Widget _buildPasswordStrengthIndicator() {
-    Color strengthColor;
-    String strengthText;
-
+  Color _getPasswordStrengthColor() {
     if (widget.passwordStrength < 0.3) {
-      strengthColor = AppTheme.lightTheme.colorScheme.error;
-      strengthText = 'Weak';
+      return AppTheme.lightTheme.colorScheme.error;
     } else if (widget.passwordStrength < 0.7) {
-      strengthColor = Colors.orange;
-      strengthText = 'Medium';
+      return Colors.orange;
     } else {
-      strengthColor = Colors.green;
-      strengthText = 'Strong';
+      return Colors.green;
     }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: LinearProgressIndicator(
-                value: widget.passwordStrength,
-                backgroundColor: AppTheme.lightTheme.colorScheme.outline
-                    .withValues(alpha: 0.3),
-                valueColor: AlwaysStoppedAnimation<Color>(strengthColor),
-                minHeight: 4,
-              ),
-            ),
-            SizedBox(width: 2.w),
-            Text(
-              strengthText,
-              style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
-                color: strengthColor,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
   }
 
-  Widget _buildDatePicker() {
+  String _getPasswordStrengthText() {
+    if (widget.passwordStrength < 0.3) {
+      return 'Weak password';
+    } else if (widget.passwordStrength < 0.7) {
+      return 'Good password';
+    } else {
+      return 'Strong password';
+    }
+  }
+
+  Widget _buildBirthDateField() {
     return GestureDetector(
-      onTap: () async {
-        final DateTime? picked = await showDatePicker(
-          context: context,
-          initialDate: widget.selectedDate ??
-              DateTime.now().subtract(const Duration(days: 365 * 18)),
-          firstDate: DateTime.now().subtract(const Duration(days: 365 * 100)),
-          lastDate: DateTime.now().subtract(const Duration(days: 365 * 16)),
-          builder: (context, child) {
-            return Theme(
-              data: Theme.of(context).copyWith(
-                colorScheme: AppTheme.lightTheme.colorScheme,
-              ),
-              child: child!,
-            );
-          },
-        );
-        if (picked != null) {
-          widget.onDateSelected(picked);
-        }
-      },
+      onTap: _selectBirthDate,
       child: Container(
         width: double.infinity,
         padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
         decoration: BoxDecoration(
           border: Border.all(
-            color:
-                AppTheme.lightTheme.colorScheme.outline.withValues(alpha: 0.3),
+            color: AppTheme.lightTheme.colorScheme.outline,
           ),
           borderRadius: BorderRadius.circular(12),
-          color: AppTheme.lightTheme.colorScheme.surface,
+          color: AppTheme.lightTheme.colorScheme.surfaceContainerHighest
+              .withAlpha(26),
         ),
         child: Row(
           children: [
-            CustomIconWidget(
-              iconName: 'calendar_today',
+            Icon(
+              Icons.calendar_today_outlined,
               color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
-              size: 20,
             ),
             SizedBox(width: 3.w),
             Expanded(
               child: Text(
-                widget.selectedDate != null
-                    ? '${widget.selectedDate!.day}/${widget.selectedDate!.month}/${widget.selectedDate!.year}'
-                    : 'Select your birth date (16+ required)',
-                style: AppTheme.lightTheme.textTheme.bodyMedium?.copyWith(
-                  color: widget.selectedDate != null
-                      ? AppTheme.lightTheme.colorScheme.onSurface
-                      : AppTheme.lightTheme.colorScheme.onSurfaceVariant
-                          .withValues(alpha: 0.6),
+                widget.selectedDate == null
+                    ? 'Birth Date *'
+                    : '${widget.selectedDate!.day}/${widget.selectedDate!.month}/${widget.selectedDate!.year}',
+                style: AppTheme.lightTheme.textTheme.bodyLarge?.copyWith(
+                  color: widget.selectedDate == null
+                      ? AppTheme.lightTheme.colorScheme.onSurfaceVariant
+                      : AppTheme.lightTheme.colorScheme.onSurface,
                 ),
               ),
             ),
-            CustomIconWidget(
-              iconName: 'arrow_drop_down',
+            Icon(
+              Icons.arrow_drop_down,
               color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
-              size: 24,
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _selectBirthDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: widget.selectedDate ?? DateTime(2000),
+      firstDate: DateTime(1950),
+      lastDate: DateTime.now()
+          .subtract(const Duration(days: 365 * 13)), // 13+ years old
+      builder: (context, child) {
+        return Theme(
+          data: AppTheme.lightTheme,
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && picked != widget.selectedDate) {
+      widget.onDateSelected(picked);
+    }
   }
 
   Widget _buildTermsCheckbox() {
@@ -443,9 +432,10 @@ class _RegistrationFormState extends State<RegistrationForm> {
       children: [
         Checkbox(
           value: widget.isTermsAccepted,
-          onChanged: (value) {
+          onChanged: (bool? value) {
             widget.onTermsChanged(value ?? false);
           },
+          activeColor: AppTheme.lightTheme.colorScheme.primary,
         ),
         Expanded(
           child: GestureDetector(
@@ -453,17 +443,19 @@ class _RegistrationFormState extends State<RegistrationForm> {
               widget.onTermsChanged(!widget.isTermsAccepted);
             },
             child: Padding(
-              padding: EdgeInsets.only(top: 1.h),
+              padding: EdgeInsets.only(top: 1.5.h),
               child: RichText(
                 text: TextSpan(
-                  style: AppTheme.lightTheme.textTheme.bodyMedium,
+                  style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
+                    color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
+                  ),
                   children: [
                     const TextSpan(text: 'I agree to the '),
                     TextSpan(
                       text: 'Terms of Service',
                       style: TextStyle(
                         color: AppTheme.lightTheme.colorScheme.primary,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const TextSpan(text: ' and '),
@@ -471,7 +463,7 @@ class _RegistrationFormState extends State<RegistrationForm> {
                       text: 'Privacy Policy',
                       style: TextStyle(
                         color: AppTheme.lightTheme.colorScheme.primary,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],

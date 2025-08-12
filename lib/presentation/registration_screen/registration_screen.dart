@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
+import 'dart:async';
 
 import '../../core/app_export.dart';
 import '../../services/auth_service.dart';
@@ -21,7 +22,10 @@ class _RegistrationScreenState extends State<RegistrationScreen>
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  bool _isUsernameAvailable = true;
+  List<String> _usernameSuggestions = [];
+  bool _showSuggestions = false;
+
+  bool _isUsernameAvailable = false;
   bool _isCheckingUsername = false;
   String? _usernameError;
   String? _emailError;
@@ -32,6 +36,10 @@ class _RegistrationScreenState extends State<RegistrationScreen>
   DateTime? _selectedDate;
   bool _isTermsAccepted = false;
   bool _isLoading = false;
+
+  // Debouncing
+  Timer? _usernameDebounceTimer;
+  Timer? _emailDebounceTimer;
 
   late AnimationController _logoAnimationController;
   late Animation<double> _logoAnimation;
@@ -91,6 +99,8 @@ class _RegistrationScreenState extends State<RegistrationScreen>
 
   @override
   void dispose() {
+    _usernameDebounceTimer?.cancel();
+    _emailDebounceTimer?.cancel();
     _logoAnimationController.dispose();
     _formAnimationController.dispose();
     _usernameController.dispose();
@@ -100,71 +110,151 @@ class _RegistrationScreenState extends State<RegistrationScreen>
     super.dispose();
   }
 
-  void _onUsernameChanged(String value) async {
+  void _onUsernameChanged(String value) {
+    // Cancel previous timer
+    _usernameDebounceTimer?.cancel();
+
     if (value.isEmpty) {
       setState(() {
         _isCheckingUsername = false;
         _usernameError = null;
-        _isUsernameAvailable = true;
+        _isUsernameAvailable = false;
+        _showSuggestions = false;
+        _usernameSuggestions = [];
       });
       return;
     }
 
-    // Basic validation
+    // Basic validation first
     if (value.length < 3) {
       setState(() {
         _isCheckingUsername = false;
         _usernameError = 'Username must be at least 3 characters';
         _isUsernameAvailable = false;
+        _showSuggestions = false;
+        _usernameSuggestions = [];
       });
       return;
     }
 
+    // Check for invalid characters
+    if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value)) {
+      setState(() {
+        _isCheckingUsername = false;
+        _usernameError =
+            'Username can only contain letters, numbers, and underscores';
+        _isUsernameAvailable = false;
+        _showSuggestions = false;
+        _usernameSuggestions = [];
+      });
+      return;
+    }
+
+    // Show checking state
     setState(() {
       _isCheckingUsername = true;
       _usernameError = null;
+      _showSuggestions = false;
+      _usernameSuggestions = [];
     });
 
+    // Debounce the API call
+    _usernameDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+      _checkUsernameAvailability(value);
+    });
+  }
+
+  Future<void> _checkUsernameAvailability(String value) async {
+    if (!mounted || _usernameController.text != value) return;
+
     try {
-      // Check username availability with real Supabase
       final isAvailable = await AuthService.checkUsernameAvailability(value);
 
       if (mounted && _usernameController.text == value) {
-        setState(() {
-          _isCheckingUsername = false;
-          _isUsernameAvailable = isAvailable;
-          _usernameError = isAvailable ? null : 'Username is already taken';
-        });
+        if (isAvailable) {
+          setState(() {
+            _isCheckingUsername = false;
+            _isUsernameAvailable = true;
+            _usernameError = null;
+            _showSuggestions = false;
+            _usernameSuggestions = [];
+          });
+        } else {
+          // Get suggestions for alternative usernames
+          final suggestions = await AuthService.getUsernameSuggestions(value);
+
+          if (mounted && _usernameController.text == value) {
+            setState(() {
+              _isCheckingUsername = false;
+              _isUsernameAvailable = false;
+              _usernameError = 'Username is already taken';
+              _showSuggestions = suggestions.isNotEmpty;
+              _usernameSuggestions = suggestions;
+            });
+          }
+        }
       }
     } catch (e) {
       if (mounted && _usernameController.text == value) {
         setState(() {
           _isCheckingUsername = false;
-          _usernameError = 'Error checking username availability';
+          _usernameError = 'Unable to verify username availability';
           _isUsernameAvailable = false;
+          _showSuggestions = false;
+          _usernameSuggestions = [];
         });
       }
     }
   }
 
-  void _onEmailChanged(String value) async {
+  void _onSuggestionTapped(String suggestion) {
+    _usernameController.text = suggestion;
+    setState(() {
+      _showSuggestions = false;
+      _usernameSuggestions = [];
+      _isUsernameAvailable = true; // Suggestions are pre-validated
+      _usernameError = null;
+      _isCheckingUsername = false;
+    });
+  }
+
+  void _onEmailChanged(String value) {
+    // Cancel previous timer
+    _emailDebounceTimer?.cancel();
+
     setState(() {
       _emailError = null;
     });
 
-    if (value.isNotEmpty &&
-        RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-      try {
-        // Check email availability with real Supabase
-        final isAvailable = await AuthService.checkEmailAvailability(value);
-        if (mounted && _emailController.text == value) {
-          setState(() {
-            _emailError = isAvailable ? null : 'Email is already registered';
-          });
-        }
-      } catch (e) {
-        // Silently fail - don't show error for email checking
+    if (value.isEmpty) return;
+
+    // Basic email format validation
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+      setState(() {
+        _emailError = 'Please enter a valid email address';
+      });
+      return;
+    }
+
+    // Debounce the availability check
+    _emailDebounceTimer = Timer(const Duration(milliseconds: 1000), () {
+      _checkEmailAvailability(value);
+    });
+  }
+
+  Future<void> _checkEmailAvailability(String value) async {
+    if (!mounted || _emailController.text != value) return;
+
+    try {
+      final isAvailable = await AuthService.checkEmailAvailability(value);
+      if (mounted && _emailController.text == value) {
+        setState(() {
+          _emailError = isAvailable ? null : 'Email is already registered';
+        });
       }
+    } catch (e) {
+      // Don't show error for email checking failures
+      // The actual signup will catch duplicate emails
     }
   }
 
@@ -172,6 +262,13 @@ class _RegistrationScreenState extends State<RegistrationScreen>
     setState(() {
       _phoneError = null;
     });
+
+    // Basic phone validation
+    if (value.isNotEmpty && !RegExp(r'^\d{10,15}$').hasMatch(value)) {
+      setState(() {
+        _phoneError = 'Please enter a valid phone number';
+      });
+    }
   }
 
   void _onPasswordChanged(String value) {
@@ -179,6 +276,13 @@ class _RegistrationScreenState extends State<RegistrationScreen>
       _passwordError = null;
       _passwordStrength = _calculatePasswordStrength(value);
     });
+
+    // Password validation
+    if (value.isNotEmpty && value.length < 6) {
+      setState(() {
+        _passwordError = 'Password must be at least 6 characters';
+      });
+    }
   }
 
   double _calculatePasswordStrength(String password) {
@@ -218,39 +322,31 @@ class _RegistrationScreenState extends State<RegistrationScreen>
   }
 
   bool _isFormValid() {
-    return _formKey.currentState?.validate() == true &&
+    final formValid = _formKey.currentState?.validate() == true;
+    final usernameValid = _usernameController.text.trim().isNotEmpty &&
         _isUsernameAvailable &&
         !_isCheckingUsername &&
-        _selectedDate != null &&
-        _isTermsAccepted &&
+        _usernameError == null;
+    final emailValid =
+        _emailController.text.trim().isNotEmpty && _emailError == null;
+    final passwordValid = _passwordController.text.isNotEmpty &&
         _passwordStrength >= 0.3 &&
-        _emailError == null;
+        _passwordError == null;
+    final dateValid = _selectedDate != null;
+    final termsValid = _isTermsAccepted;
+
+    return formValid &&
+        usernameValid &&
+        emailValid &&
+        passwordValid &&
+        dateValid &&
+        termsValid;
   }
 
   Future<void> _handleRegistration() async {
+    // Final validation before submission
     if (!_isFormValid()) {
-      if (_selectedDate == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Please select your birth date'),
-            backgroundColor: AppTheme.lightTheme.colorScheme.error,
-          ),
-        );
-      } else if (!_isTermsAccepted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Please accept the Terms & Privacy Policy'),
-            backgroundColor: AppTheme.lightTheme.colorScheme.error,
-          ),
-        );
-      } else if (_passwordStrength < 0.3) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Please create a stronger password'),
-            backgroundColor: AppTheme.lightTheme.colorScheme.error,
-          ),
-        );
-      }
+      _showValidationErrors();
       return;
     }
 
@@ -259,13 +355,14 @@ class _RegistrationScreenState extends State<RegistrationScreen>
     });
 
     try {
-      // Create user with Supabase
       final response = await AuthService.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text,
         username: _usernameController.text.trim(),
-        fullName: _usernameController.text
-            .trim(), // Using username as full name for now
+        fullName: _usernameController.text.trim(),
+        phoneNumber: _phoneController.text.isNotEmpty
+            ? '${_selectedCountryCode}${_phoneController.text.trim()}'
+            : null,
       );
 
       if (mounted) {
@@ -274,16 +371,13 @@ class _RegistrationScreenState extends State<RegistrationScreen>
         });
 
         if (response.user != null) {
-          // Registration successful
-          _showSuccessDialog();
+          if (response.session == null) {
+            _showEmailConfirmationDialog();
+          } else {
+            _showSuccessDialog();
+          }
         } else {
-          // Registration failed
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Registration failed. Please try again.'),
-              backgroundColor: AppTheme.lightTheme.colorScheme.error,
-            ),
-          );
+          _showErrorSnackBar('Registration failed. Please try again.');
         }
       }
     } catch (e) {
@@ -292,27 +386,90 @@ class _RegistrationScreenState extends State<RegistrationScreen>
           _isLoading = false;
         });
 
-        String errorMessage = 'Registration failed. Please try again.';
-
-        // Handle specific Supabase errors
-        if (e.toString().contains('User already registered')) {
-          errorMessage = 'Email is already registered. Please try logging in.';
-        } else if (e
-            .toString()
-            .contains('Password should be at least 6 characters')) {
-          errorMessage = 'Password should be at least 6 characters long.';
-        } else if (e.toString().contains('Unable to validate email')) {
-          errorMessage = 'Please enter a valid email address.';
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: AppTheme.lightTheme.colorScheme.error,
-          ),
-        );
+        String errorMessage = e.toString().replaceFirst('Exception: ', '');
+        _showErrorSnackBar(errorMessage);
       }
     }
+  }
+
+  void _showValidationErrors() {
+    String errorMessage = '';
+
+    if (_usernameController.text.trim().isEmpty) {
+      errorMessage = 'Please enter a username';
+    } else if (!_isUsernameAvailable) {
+      errorMessage = 'Please choose an available username';
+    } else if (_emailController.text.trim().isEmpty) {
+      errorMessage = 'Please enter your email';
+    } else if (_emailError != null) {
+      errorMessage = 'Please fix email errors';
+    } else if (_passwordController.text.isEmpty) {
+      errorMessage = 'Please enter a password';
+    } else if (_passwordStrength < 0.3) {
+      errorMessage = 'Please create a stronger password';
+    } else if (_selectedDate == null) {
+      errorMessage = 'Please select your birth date';
+    } else if (!_isTermsAccepted) {
+      errorMessage = 'Please accept the Terms & Privacy Policy';
+    }
+
+    if (errorMessage.isNotEmpty) {
+      _showErrorSnackBar(errorMessage);
+    }
+  }
+
+  void _showErrorSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: AppTheme.lightTheme.colorScheme.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  void _showEmailConfirmationDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CustomIconWidget(
+              iconName: 'mail_outline',
+              color: AppTheme.lightTheme.colorScheme.primary,
+              size: 60,
+            ),
+            SizedBox(height: 2.h),
+            Text(
+              'Check Your Email',
+              style: AppTheme.lightTheme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 1.h),
+            Text(
+              'We\'ve sent a confirmation email to ${_emailController.text}. Please check your email and click the confirmation link to activate your account.',
+              style: AppTheme.lightTheme.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.pushReplacementNamed(context, '/login-screen');
+            },
+            child: const Text('Go to Login'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showSuccessDialog() {
@@ -373,14 +530,11 @@ class _RegistrationScreenState extends State<RegistrationScreen>
           success = await AuthService.signInWithApple();
           break;
         case 'Facebook':
-          // Facebook OAuth not implemented in AuthService yet
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Facebook signup coming soon'),
-              backgroundColor: AppTheme.lightTheme.colorScheme.primary,
-            ),
-          );
-          break;
+          _showErrorSnackBar('Facebook signup coming soon');
+          setState(() {
+            _isLoading = false;
+          });
+          return;
       }
 
       if (mounted) {
@@ -388,8 +542,13 @@ class _RegistrationScreenState extends State<RegistrationScreen>
           _isLoading = false;
         });
 
-        if (success && provider != 'Facebook') {
-          Navigator.pushReplacementNamed(context, '/main-video-feed');
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$provider signin initiated...'),
+              backgroundColor: AppTheme.lightTheme.colorScheme.primary,
+            ),
+          );
         }
       }
     } catch (e) {
@@ -398,12 +557,8 @@ class _RegistrationScreenState extends State<RegistrationScreen>
           _isLoading = false;
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$provider signup failed. Please try again.'),
-            backgroundColor: AppTheme.lightTheme.colorScheme.error,
-          ),
-        );
+        String errorMessage = e.toString().replaceFirst('Exception: ', '');
+        _showErrorSnackBar(errorMessage);
       }
     }
   }
@@ -464,8 +619,8 @@ class _RegistrationScreenState extends State<RegistrationScreen>
                   borderRadius: BorderRadius.circular(4.w),
                   boxShadow: [
                     BoxShadow(
-                      color: AppTheme.lightTheme.colorScheme.primary
-                          .withValues(alpha: 0.3),
+                      color:
+                          AppTheme.lightTheme.colorScheme.primary.withAlpha(77),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -509,30 +664,92 @@ class _RegistrationScreenState extends State<RegistrationScreen>
       position: _formSlideAnimation,
       child: FadeTransition(
         opacity: _formFadeAnimation,
-        child: RegistrationForm(
-          formKey: _formKey,
-          usernameController: _usernameController,
-          emailController: _emailController,
-          phoneController: _phoneController,
-          passwordController: _passwordController,
-          onUsernameChanged: _onUsernameChanged,
-          onEmailChanged: _onEmailChanged,
-          onPhoneChanged: _onPhoneChanged,
-          onPasswordChanged: _onPasswordChanged,
-          isUsernameAvailable: _isUsernameAvailable,
-          isCheckingUsername: _isCheckingUsername,
-          usernameError: _usernameError,
-          emailError: _emailError,
-          phoneError: _phoneError,
-          passwordError: _passwordError,
-          passwordStrength: _passwordStrength,
-          selectedCountryCode: _selectedCountryCode,
-          onCountryCodeChanged: _onCountryCodeChanged,
-          selectedDate: _selectedDate,
-          onDateSelected: _onDateSelected,
-          isTermsAccepted: _isTermsAccepted,
-          onTermsChanged: _onTermsChanged,
+        child: Column(
+          children: [
+            RegistrationForm(
+              formKey: _formKey,
+              usernameController: _usernameController,
+              emailController: _emailController,
+              phoneController: _phoneController,
+              passwordController: _passwordController,
+              onUsernameChanged: _onUsernameChanged,
+              onEmailChanged: _onEmailChanged,
+              onPhoneChanged: _onPhoneChanged,
+              onPasswordChanged: _onPasswordChanged,
+              isUsernameAvailable: _isUsernameAvailable,
+              isCheckingUsername: _isCheckingUsername,
+              usernameError: _usernameError,
+              emailError: _emailError,
+              phoneError: _phoneError,
+              passwordError: _passwordError,
+              passwordStrength: _passwordStrength,
+              selectedCountryCode: _selectedCountryCode,
+              onCountryCodeChanged: _onCountryCodeChanged,
+              selectedDate: _selectedDate,
+              onDateSelected: _onDateSelected,
+              isTermsAccepted: _isTermsAccepted,
+              onTermsChanged: _onTermsChanged,
+            ),
+            if (_showSuggestions && _usernameSuggestions.isNotEmpty)
+              _buildUsernameSuggestions(),
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildUsernameSuggestions() {
+    return Container(
+      margin: EdgeInsets.only(top: 1.h),
+      padding: EdgeInsets.all(3.w),
+      decoration: BoxDecoration(
+        color: AppTheme.lightTheme.colorScheme.surfaceContainerHighest
+            .withAlpha(26),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.lightTheme.colorScheme.outline.withAlpha(51),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Suggested usernames:',
+            style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
+              color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: 1.h),
+          Wrap(
+            spacing: 2.w,
+            runSpacing: 1.h,
+            children: _usernameSuggestions.map((suggestion) {
+              return GestureDetector(
+                onTap: () => _onSuggestionTapped(suggestion),
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 1.h),
+                  decoration: BoxDecoration(
+                    color:
+                        AppTheme.lightTheme.colorScheme.primary.withAlpha(26),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color:
+                          AppTheme.lightTheme.colorScheme.primary.withAlpha(77),
+                    ),
+                  ),
+                  child: Text(
+                    suggestion,
+                    style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
+                      color: AppTheme.lightTheme.colorScheme.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -546,11 +763,10 @@ class _RegistrationScreenState extends State<RegistrationScreen>
         style: ElevatedButton.styleFrom(
           backgroundColor: _isFormValid()
               ? AppTheme.lightTheme.colorScheme.primary
-              : AppTheme.lightTheme.colorScheme.outline.withValues(alpha: 0.3),
+              : AppTheme.lightTheme.colorScheme.outline.withAlpha(77),
           foregroundColor: Colors.white,
           elevation: _isFormValid() ? 4 : 0,
-          shadowColor:
-              AppTheme.lightTheme.colorScheme.primary.withValues(alpha: 0.3),
+          shadowColor: AppTheme.lightTheme.colorScheme.primary.withAlpha(77),
         ),
         child: _isLoading
             ? SizedBox(
@@ -608,7 +824,7 @@ class _RegistrationScreenState extends State<RegistrationScreen>
 
   Widget _buildLoadingOverlay() {
     return Container(
-      color: Colors.black.withValues(alpha: 0.5),
+      color: Colors.black.withAlpha(128),
       child: Center(
         child: Container(
           padding: EdgeInsets.all(6.w),

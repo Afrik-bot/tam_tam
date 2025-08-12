@@ -6,9 +6,17 @@ class ContentService {
   // Remove mock data and use real Supabase data
   static Future<List<Map<String, dynamic>>> getViralVideos() async {
     try {
-      return await _supabase.getViralContent(limit: 20);
+      final content = await _supabase.getViralContent(limit: 20);
+
+      if (content.isEmpty) {
+        // Fallback to recent content if no viral content
+        return await getFeedContent(limit: 20);
+      }
+
+      return content;
     } catch (e) {
-      throw Exception('Failed to load viral videos: $e');
+      throw Exception(
+          'Failed to load viral videos: ${e.toString().replaceAll('Exception: ', '')}');
     }
   }
 
@@ -17,19 +25,35 @@ class ContentService {
     int limit = 10,
   }) async {
     try {
-      return await _supabase.getFeedContent(
+      final content = await _supabase.getFeedContent(
         limit: limit,
         offset: page * limit,
       );
+
+      // Enhanced error handling for empty responses
+      if (content.isEmpty && page == 0) {
+        throw Exception(
+            'No videos available. Database might be empty or videos may be loading.');
+      }
+
+      return content;
     } catch (e) {
-      throw Exception('Failed to load feed content: $e');
+      // Better error messaging for users
+      if (e.toString().contains('No videos available')) {
+        throw Exception('No videos found. Pull to refresh or try again later.');
+      } else if (e.toString().contains('network')) {
+        throw Exception('Network error. Check your internet connection.');
+      } else {
+        throw Exception(
+            'Failed to load videos: ${e.toString().replaceAll('Exception: ', '')}');
+      }
     }
   }
 
   static Future<Map<String, dynamic>> getContentDetails(
       String contentId) async {
     try {
-      return await _supabase.getContentById(contentId);
+      return await _supabase.getContentDetails(contentId);
     } catch (e) {
       throw Exception('Failed to load content details: $e');
     }

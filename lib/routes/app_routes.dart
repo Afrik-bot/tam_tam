@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../presentation/creator_analytics_dashboard/creator_analytics_dashboard.dart';
+import '../presentation/main_video_feed/main_video_feed.dart';
 import '../presentation/splash_screen/splash_screen.dart';
 import '../presentation/live_streaming_interface/live_streaming_interface.dart';
 import '../presentation/user_profile_screen/user_profile_screen.dart';
@@ -27,17 +28,18 @@ class AppRoutes {
   static const String registration = '/registration-screen';
 
   static Map<String, WidgetBuilder> routes = {
-  initial: (context) => const SplashScreen(),
-  creatorAnalyticsDashboard: (context) => const CreatorAnalyticsDashboard(),
-  splash: (context) => const SplashScreen(),
-  liveStreamingInterface: (context) => const LiveStreamingInterface(),
-  userProfile: (context) => const UserProfileScreen(),
-  login: (context) => const LoginScreen(),
-  onboardingFlow: (context) => const OnboardingFlow(),
-  sendMoney: (context) => const SendMoneyScreen(),
-  videoCreationStudio: (context) => const VideoCreationStudio(),
-  cryptoWalletDashboard: (context) => const CryptoWalletDashboard(),
-  registration: (context) => const RegistrationScreen(),
-  // TODO: Add your other routes here
-};
+    initial: (context) => const SplashScreen(),
+    creatorAnalyticsDashboard: (context) => const CreatorAnalyticsDashboard(),
+    mainVideoFeed: (context) => const MainVideoFeed(),
+    splash: (context) => const SplashScreen(),
+    liveStreamingInterface: (context) => const LiveStreamingInterface(),
+    userProfile: (context) => const UserProfileScreen(),
+    login: (context) => const LoginScreen(),
+    onboardingFlow: (context) => const OnboardingFlow(),
+    sendMoney: (context) => const SendMoneyScreen(),
+    videoCreationStudio: (context) => const VideoCreationStudio(),
+    cryptoWalletDashboard: (context) => const CryptoWalletDashboard(),
+    registration: (context) => const RegistrationScreen(),
+    // TODO: Add your other routes here
+  };
 }

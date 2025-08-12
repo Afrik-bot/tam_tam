@@ -22,6 +22,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
   List<Map<String, dynamic>> _videos = [];
   bool _isLoading = true;
   int _currentPage = 0;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -50,24 +51,143 @@ class _MainVideoFeedState extends State<MainVideoFeed>
 
   Future<void> _loadVideos() async {
     try {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
 
-      // Use real data instead of mock data
+      // Load real content from database
       final videos = await ContentService.getFeedContent(limit: 20);
+
+      if (videos.isEmpty && !AuthService.isAuthenticated) {
+        // If no videos and user not authenticated, show preview content
+        setState(() {
+          _videos = _getPreviewContent();
+          _isLoading = false;
+        });
+        return;
+      }
 
       setState(() {
         _videos = videos;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+      });
+
+      // Show fallback content if there's an error
+      if (_videos.isEmpty) {
+        setState(() {
+          _videos = _getPreviewContent();
+        });
+      }
+
+      // Show error message to user
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                'Failed to load videos: ${e.toString().replaceAll('Exception: ', '')}'),
-            backgroundColor: Colors.red));
+        String displayMessage = _errorMessage!;
+
+        if (displayMessage.contains('No videos found') ||
+            displayMessage.contains('Database might be empty')) {
+          displayMessage = 'Content is loading. Pull down to refresh.';
+        } else if (displayMessage.contains('network') ||
+            displayMessage.contains('Failed to fetch')) {
+          displayMessage = 'Check your internet connection and try again.';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(displayMessage),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _loadVideos,
+            ),
+          ),
+        );
       }
     }
+  }
+
+  List<Map<String, dynamic>> _getPreviewContent() {
+    // Fallback content for preview or when database is empty
+    return [
+      {
+        'id': 'preview_1',
+        'title': 'Welcome to Tam Tam!',
+        'description':
+            'Create, Connect, and Earn with amazing video content. Join our community today!',
+        'video_url':
+            'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+        'thumbnail_url': 'https://picsum.photos/400/600?random=1',
+        'creator_username': 'tamtam_official',
+        'creator_full_name': 'Tam Tam Official',
+        'creator_avatar_url':
+            'https://ui-avatars.com/api/?name=TamTam&background=FF6B35&color=fff&size=150',
+        'creator_verified': true,
+        'creator_followers_count': 10000,
+        'view_count': 50000,
+        'like_count': 2500,
+        'comment_count': 180,
+        'share_count': 320,
+        'allows_comments': true,
+        'allows_duets': true,
+        'tags': ['welcome', 'tamtam', 'community'],
+        'created_at':
+            DateTime.now().subtract(Duration(hours: 2)).toIso8601String(),
+      },
+      {
+        'id': 'preview_2',
+        'title': 'Amazing Dance Moves',
+        'description':
+            'Check out these incredible dance moves! 🔥 #dance #trending',
+        'video_url':
+            'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4',
+        'thumbnail_url': 'https://picsum.photos/400/600?random=2',
+        'creator_username': 'dance_star',
+        'creator_full_name': 'Dance Star',
+        'creator_avatar_url':
+            'https://ui-avatars.com/api/?name=DS&background=random&size=150',
+        'creator_verified': false,
+        'creator_followers_count': 5600,
+        'view_count': 28000,
+        'like_count': 1800,
+        'comment_count': 95,
+        'share_count': 210,
+        'allows_comments': true,
+        'allows_duets': true,
+        'tags': ['dance', 'trending', 'moves'],
+        'created_at':
+            DateTime.now().subtract(Duration(hours: 5)).toIso8601String(),
+      },
+      {
+        'id': 'preview_3',
+        'title': 'Cooking Magic',
+        'description':
+            'Learn this amazing recipe in just 60 seconds! Perfect for beginners 👨‍🍳',
+        'video_url':
+            'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+        'thumbnail_url': 'https://picsum.photos/400/600?random=3',
+        'creator_username': 'chef_master',
+        'creator_full_name': 'Chef Master',
+        'creator_avatar_url':
+            'https://ui-avatars.com/api/?name=CM&background=random&size=150',
+        'creator_verified': true,
+        'creator_followers_count': 8900,
+        'view_count': 42000,
+        'like_count': 3200,
+        'comment_count': 256,
+        'share_count': 580,
+        'allows_comments': true,
+        'allows_duets': false,
+        'tags': ['cooking', 'recipe', 'food', 'tutorial'],
+        'created_at':
+            DateTime.now().subtract(Duration(hours: 8)).toIso8601String(),
+      },
+    ];
   }
 
   Future<void> _refreshVideos() async {
@@ -84,13 +204,17 @@ class _MainVideoFeedState extends State<MainVideoFeed>
   }
 
   Future<void> _loadMoreVideos() async {
+    if (_isLoading) return;
+
     try {
       final moreVideos = await ContentService.getFeedContent(
           page: (_videos.length / 10).floor(), limit: 10);
 
-      setState(() {
-        _videos.addAll(moreVideos);
-      });
+      if (moreVideos.isNotEmpty) {
+        setState(() {
+          _videos.addAll(moreVideos);
+        });
+      }
     } catch (e) {
       // Handle error silently for pagination
       print('Failed to load more videos: $e');
@@ -102,63 +226,164 @@ class _MainVideoFeedState extends State<MainVideoFeed>
     return Scaffold(
         backgroundColor: Colors.black,
         body: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
+            ? _buildLoadingState()
             : _videos.isEmpty
                 ? _buildEmptyState()
                 : _buildVideoFeed());
   }
 
+  Widget _buildLoadingState() {
+    return Container(
+      color: Colors.black,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B35)),
+            strokeWidth: 3,
+          ),
+          SizedBox(height: 3.h),
+          Text(
+            'Loading amazing content...',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 16.sp,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: 1.h),
+          Text(
+            'Get ready for the best videos!',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 14.sp,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
     return RefreshIndicator(
-        onRefresh: _refreshVideos,
-        child: ListView(
-            padding: EdgeInsets.symmetric(horizontal: 20.w),
-            children: [
-              SizedBox(height: 30.h),
-              Icon(Icons.video_library_outlined,
-                  size: 80.sp, color: Colors.white54),
-              SizedBox(height: 2.h),
-              Text(
-                  AuthService.isAuthenticated
-                      ? 'No videos available'
-                      : 'Sign in to see personalized content',
-                  style: TextStyle(
-                      fontSize: 18.sp,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500),
-                  textAlign: TextAlign.center),
-              SizedBox(height: 1.h),
-              Text(
-                  AuthService.isAuthenticated
-                      ? 'Pull to refresh or check back later'
-                      : 'Connect with creators and discover amazing content',
-                  style: TextStyle(fontSize: 14.sp, color: Colors.white54),
-                  textAlign: TextAlign.center),
-              if (!AuthService.isAuthenticated) ...[
-                SizedBox(height: 4.h),
-                ElevatedButton(
-                    onPressed: () {
-                      Navigator.pushNamed(context, AppRoutes.login);
-                    },
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF6B35),
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(
-                            horizontal: 8.w, vertical: 1.5.h),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(25))),
-                    child: Text('Sign In',
-                        style: TextStyle(
-                            fontSize: 16.sp, fontWeight: FontWeight.w600))),
-              ],
-            ]));
+      onRefresh: _refreshVideos,
+      color: Color(0xFFFF6B35),
+      child: ListView(
+        padding: EdgeInsets.symmetric(horizontal: 20.w),
+        children: [
+          SizedBox(height: 25.h),
+          Container(
+            padding: EdgeInsets.all(4.w),
+            decoration: BoxDecoration(
+              color: Color(0xFFFF6B35).withAlpha(26),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              Icons.video_library_outlined,
+              size: 80.sp,
+              color: Color(0xFFFF6B35),
+            ),
+          ),
+          SizedBox(height: 3.h),
+          Text(
+            AuthService.isAuthenticated
+                ? 'No videos available'
+                : 'Welcome to Tam Tam!',
+            style: TextStyle(
+                fontSize: 24.sp,
+                color: Colors.white,
+                fontWeight: FontWeight.w700),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 2.h),
+          Text(
+            AuthService.isAuthenticated
+                ? 'Content is loading or database is empty. Pull down to refresh or check back later.'
+                : 'Create, Connect, and Earn with amazing video content. Sign up to join our creative community!',
+            style: TextStyle(
+              fontSize: 16.sp,
+              color: Colors.white70,
+              height: 1.4,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 4.h),
+          if (!AuthService.isAuthenticated) ...[
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pushNamed(context, AppRoutes.registration);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF6B35),
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 2.h),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30)),
+                elevation: 5,
+              ),
+              child: Text('Join Tam Tam',
+                  style:
+                      TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w700)),
+            ),
+            SizedBox(height: 2.h),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.pushNamed(context, AppRoutes.login);
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white54, width: 2),
+                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 2.h),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30)),
+              ),
+              child: Text('Sign In',
+                  style:
+                      TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w600)),
+            ),
+          ] else ...[
+            ElevatedButton.icon(
+              onPressed: _loadVideos,
+              icon: Icon(Icons.refresh, size: 20.sp),
+              label: Text('Reload Content',
+                  style:
+                      TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF6B35),
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 1.8.h),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(25)),
+                elevation: 3,
+              ),
+            ),
+            SizedBox(height: 2.h),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, AppRoutes.videoCreationStudio);
+              },
+              icon: Icon(Icons.add_circle_outline, size: 20.sp),
+              label: Text('Create Content',
+                  style:
+                      TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white54, width: 2),
+                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 1.8.h),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(25)),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildVideoFeed() {
     return RefreshIndicator(
         onRefresh: _refreshVideos,
+        color: Color(0xFFFF6B35),
         child: PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical,
@@ -197,9 +422,9 @@ class _MainVideoFeedState extends State<MainVideoFeed>
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        height: 30.h,
+        height: 35.h,
         decoration: BoxDecoration(
-          color: Colors.black87,
+          color: Colors.black.withAlpha(242),
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
@@ -213,29 +438,56 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
+            SizedBox(height: 1.h),
             ListTile(
-              leading: Icon(Icons.bookmark_outline, color: Colors.white),
-              title: Text('Save Video', style: TextStyle(color: Colors.white)),
+              leading: Icon(Icons.bookmark_outline,
+                  color: Colors.white, size: 24.sp),
+              title: Text('Save Video',
+                  style: TextStyle(color: Colors.white, fontSize: 16.sp)),
               onTap: () {
                 Navigator.pop(context);
                 _saveVideo(video['id']);
               },
             ),
             ListTile(
-              leading: Icon(Icons.report_outlined, color: Colors.white),
-              title: Text('Report', style: TextStyle(color: Colors.white)),
+              leading:
+                  Icon(Icons.share_outlined, color: Colors.white, size: 24.sp),
+              title: Text('Share Video',
+                  style: TextStyle(color: Colors.white, fontSize: 16.sp)),
               onTap: () {
                 Navigator.pop(context);
-                _reportContent(video['id']);
+                _handleShare(video['id']);
               },
             ),
             ListTile(
-              leading: Icon(Icons.person_outline, color: Colors.white),
-              title:
-                  Text('View Profile', style: TextStyle(color: Colors.white)),
+              leading:
+                  Icon(Icons.person_outline, color: Colors.white, size: 24.sp),
+              title: Text('View Profile',
+                  style: TextStyle(color: Colors.white, fontSize: 16.sp)),
               onTap: () {
                 Navigator.pop(context);
                 _viewProfile(video['creator_id']);
+              },
+            ),
+            if (video['allows_duets'] == true)
+              ListTile(
+                leading:
+                    Icon(Icons.duo_outlined, color: Colors.white, size: 24.sp),
+                title: Text('Duet',
+                    style: TextStyle(color: Colors.white, fontSize: 16.sp)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _createDuet(video);
+                },
+              ),
+            ListTile(
+              leading:
+                  Icon(Icons.report_outlined, color: Colors.red, size: 24.sp),
+              title: Text('Report',
+                  style: TextStyle(color: Colors.red, fontSize: 16.sp)),
+              onTap: () {
+                Navigator.pop(context);
+                _reportContent(video['id']);
               },
             ),
           ],
@@ -248,9 +500,21 @@ class _MainVideoFeedState extends State<MainVideoFeed>
     // Implementation for saving video
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Video saved!')),
+        SnackBar(
+          content: Text('Video saved to your collection!'),
+          backgroundColor: Colors.green,
+        ),
       );
     }
+  }
+
+  void _createDuet(Map<String, dynamic> video) {
+    // Navigate to video creation with duet option
+    Navigator.pushNamed(
+      context,
+      AppRoutes.videoCreationStudio,
+      arguments: {'duet_with': video},
+    );
   }
 
   Future<void> _reportContent(String contentId) async {
@@ -258,24 +522,33 @@ class _MainVideoFeedState extends State<MainVideoFeed>
       await ContentService.reportContent(contentId, 'inappropriate_content');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Content reported')),
+          SnackBar(
+            content: Text(
+                'Content reported. Thank you for keeping our community safe.'),
+            backgroundColor: Colors.orange,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to report content')),
+          SnackBar(
+            content: Text('Failed to report content. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
   }
 
-  void _viewProfile(String creatorId) {
-    Navigator.pushNamed(
-      context,
-      AppRoutes.userProfile,
-      arguments: creatorId,
-    );
+  void _viewProfile(String? creatorId) {
+    if (creatorId != null && creatorId.isNotEmpty) {
+      Navigator.pushNamed(
+        context,
+        AppRoutes.userProfile,
+        arguments: creatorId,
+      );
+    }
   }
 
   Future<void> _handleLike(String contentId) async {
@@ -296,8 +569,12 @@ class _MainVideoFeedState extends State<MainVideoFeed>
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to like video: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to like video. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -314,7 +591,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (context) => Container(
-            height: MediaQuery.of(context).size.height * 0.7,
+            height: MediaQuery.of(context).size.height * 0.75,
             decoration: const BoxDecoration(
                 color: Colors.black87,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -328,32 +605,270 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                       borderRadius: BorderRadius.circular(10))),
               Padding(
                   padding: EdgeInsets.all(4.w),
-                  child: Text('Comments',
-                      style: TextStyle(
-                          fontSize: 18.sp,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600))),
-              const Divider(color: Colors.white24),
-              // Comments would be loaded here
-              Expanded(
-                  child: Center(
-                      child: Text('Comments loading...',
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Comments',
                           style: TextStyle(
-                              fontSize: 14.sp, color: Colors.white54)))),
+                              fontSize: 18.sp,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600)),
+                      IconButton(
+                        icon: Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  )),
+              const Divider(color: Colors.white24),
+              Expanded(
+                  child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: ContentService.getContentComments(contentId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFFFF6B35),
+                      ),
+                    );
+                  }
+
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Failed to load comments',
+                        style:
+                            TextStyle(color: Colors.white54, fontSize: 14.sp),
+                      ),
+                    );
+                  }
+
+                  final comments = snapshot.data ?? [];
+
+                  if (comments.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.chat_bubble_outline,
+                            size: 48.sp,
+                            color: Colors.white54,
+                          ),
+                          SizedBox(height: 2.h),
+                          Text(
+                            'No comments yet',
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 16.sp,
+                            ),
+                          ),
+                          SizedBox(height: 1.h),
+                          Text(
+                            'Be the first to comment!',
+                            style: TextStyle(
+                              color: Colors.white38,
+                              fontSize: 14.sp,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: comments.length,
+                    itemBuilder: (context, index) {
+                      final comment = comments[index];
+                      return _buildCommentItem(comment);
+                    },
+                  );
+                },
+              )),
+              _buildCommentInput(contentId),
             ])));
+  }
+
+  Widget _buildCommentItem(Map<String, dynamic> comment) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 20.sp,
+            backgroundImage: NetworkImage(
+              comment['avatar_url'] ??
+                  'https://ui-avatars.com/api/?name=${comment['username'] ?? 'User'}&background=random&size=150',
+            ),
+          ),
+          SizedBox(width: 3.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      comment['username'] ?? 'Unknown User',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (comment['verified'] == true) ...[
+                      SizedBox(width: 1.w),
+                      Icon(
+                        Icons.verified,
+                        color: Color(0xFFFF6B35),
+                        size: 16.sp,
+                      ),
+                    ],
+                    Spacer(),
+                    Text(
+                      _formatTimeAgo(comment['created_at']),
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12.sp,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 0.5.h),
+                Text(
+                  comment['text_content'] ?? '',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14.sp,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentInput(String contentId) {
+    final TextEditingController commentController = TextEditingController();
+
+    return Container(
+      padding: EdgeInsets.all(4.w),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        border: Border(top: BorderSide(color: Colors.white24)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: commentController,
+              style: TextStyle(color: Colors.white, fontSize: 14.sp),
+              decoration: InputDecoration(
+                hintText: 'Add a comment...',
+                hintStyle: TextStyle(color: Colors.white54),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide(color: Color(0xFFFF6B35)),
+                ),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
+              ),
+              maxLines: null,
+              textCapitalization: TextCapitalization.sentences,
+            ),
+          ),
+          SizedBox(width: 2.w),
+          GestureDetector(
+            onTap: () async {
+              final comment = commentController.text.trim();
+              if (comment.isNotEmpty) {
+                try {
+                  await ContentService.addComment(contentId, comment);
+                  commentController.clear();
+                  // Refresh the comments
+                  setState(() {});
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to post comment'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            child: Container(
+              padding: EdgeInsets.all(2.w),
+              decoration: BoxDecoration(
+                color: Color(0xFFFF6B35),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(
+                Icons.send,
+                color: Colors.white,
+                size: 20.sp,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTimeAgo(String? createdAt) {
+    if (createdAt == null) return '';
+
+    try {
+      final DateTime commentTime = DateTime.parse(createdAt);
+      final DateTime now = DateTime.now();
+      final Duration difference = now.difference(commentTime);
+
+      if (difference.inDays > 7) {
+        return '${commentTime.day}/${commentTime.month}';
+      } else if (difference.inDays > 0) {
+        return '${difference.inDays}d ago';
+      } else if (difference.inHours > 0) {
+        return '${difference.inHours}h ago';
+      } else if (difference.inMinutes > 0) {
+        return '${difference.inMinutes}m ago';
+      } else {
+        return 'now';
+      }
+    } catch (e) {
+      return '';
+    }
   }
 
   Future<void> _handleShare(String contentId) async {
     try {
       await ContentService.shareContent(contentId);
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Video shared!')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Video shared successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to share: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to share video'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -369,16 +884,41 @@ class _MainVideoFeedState extends State<MainVideoFeed>
         context: context,
         builder: (context) => AlertDialog(
                 backgroundColor: Colors.black87,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
                 title: Text('Send Tip',
                     style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600)),
-                content: Text('Tipping feature coming soon!',
-                    style: TextStyle(color: Colors.white70)),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 18.sp)),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Show your appreciation to this creator!',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14.sp,
+                          height: 1.3,
+                        )),
+                    SizedBox(height: 2.h),
+                    Text('Tipping feature coming soon!',
+                        style: TextStyle(
+                          color: Color(0xFFFF6B35),
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.w600,
+                        )),
+                  ],
+                ),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: Text('OK',
-                          style: TextStyle(color: const Color(0xFFFF6B35)))),
+                      child: Text('Got it',
+                          style: TextStyle(
+                            color: const Color(0xFFFF6B35),
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w600,
+                          ))),
                 ]));
   }
 
@@ -387,23 +927,47 @@ class _MainVideoFeedState extends State<MainVideoFeed>
         context: context,
         builder: (context) => AlertDialog(
                 backgroundColor: Colors.black87,
-                title: Text('Sign In Required',
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                title: Text('Join Tam Tam',
                     style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600)),
-                content: Text('Please sign in to interact with content',
-                    style: TextStyle(color: Colors.white70)),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 18.sp)),
+                content: Text(
+                  'Sign up to like videos, leave comments, and connect with amazing creators!',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14.sp,
+                    height: 1.4,
+                  ),
+                ),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(context),
                       child: Text('Cancel',
-                          style: TextStyle(color: Colors.white54))),
-                  TextButton(
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 16.sp,
+                          ))),
+                  ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        Navigator.pushNamed(context, AppRoutes.login);
+                        Navigator.pushNamed(context, AppRoutes.registration);
                       },
-                      child: Text('Sign In',
-                          style: TextStyle(color: const Color(0xFFFF6B35)))),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Color(0xFFFF6B35),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text('Sign Up',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w600,
+                          ))),
                 ]));
   }
 }

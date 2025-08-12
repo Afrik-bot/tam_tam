@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:sizer/sizer.dart';
 import 'package:video_player/video_player.dart';
-
-import '../../../core/app_export.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:sizer/sizer.dart';
 
 class VideoPlayerWidget extends StatefulWidget {
   final Map<String, dynamic> video;
@@ -22,278 +21,373 @@ class VideoPlayerWidget extends StatefulWidget {
   State<VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
 }
 
-class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _likeAnimationController;
-  late Animation<double> _likeAnimation;
-  bool _showLikeAnimation = false;
-
-  VideoPlayerController? _videoController;
-  bool _isVideoInitialized = false;
+class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
   bool _hasError = false;
-  bool _isPlaying = false;
+  String? _errorMessage;
+  bool _showPlayButton = false;
+  bool _isBuffering = false;
 
   @override
   void initState() {
     super.initState();
-    _likeAnimationController = AnimationController(
-        duration: const Duration(milliseconds: 600), vsync: this);
-    _likeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(
-            parent: _likeAnimationController, curve: Curves.elasticOut));
-
     _initializeVideo();
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
   }
 
   @override
   void didUpdateWidget(VideoPlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Handle active state changes
     if (widget.isActive != oldWidget.isActive) {
-      if (widget.isActive) {
-        _playVideo();
-      } else {
-        _pauseVideo();
-      }
+      _handleActiveStateChange();
     }
 
-    // Handle video source changes
-    if (widget.video['id'] != oldWidget.video['id']) {
-      _disposeVideo();
+    if (widget.video['video_url'] != oldWidget.video['video_url']) {
       _initializeVideo();
     }
   }
 
   Future<void> _initializeVideo() async {
+    // Dispose previous controller
+    await _controller?.dispose();
+
+    setState(() {
+      _isInitialized = false;
+      _hasError = false;
+      _errorMessage = null;
+      _isBuffering = true;
+    });
+
     final videoUrl = widget.video['video_url'] as String?;
 
     if (videoUrl == null || videoUrl.isEmpty) {
       setState(() {
         _hasError = true;
-        _isVideoInitialized = false;
+        _errorMessage = 'Video URL not available';
+        _isBuffering = false;
       });
       return;
     }
 
     try {
-      // Create video controller
+      // Create new controller
       if (videoUrl.startsWith('http')) {
-        _videoController =
-            VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+        _controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
       } else {
-        // Handle storage URLs from Supabase
-        _videoController =
-            VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Invalid video URL format';
+          _isBuffering = false;
+        });
+        return;
       }
 
-      await _videoController!.initialize();
+      // Add listener for buffering state
+      _controller?.addListener(_videoListener);
 
-      // Set video to loop
-      await _videoController!.setLooping(true);
+      // Initialize the controller
+      await _controller?.initialize();
 
-      // Set volume
-      await _videoController!.setVolume(1.0);
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+          _isBuffering = false;
+          _hasError = false;
+        });
 
-      setState(() {
-        _isVideoInitialized = true;
-        _hasError = false;
-      });
+        // Set looping
+        _controller?.setLooping(true);
 
-      // Auto-play if this video is active
-      if (widget.isActive) {
-        _playVideo();
+        // Auto-play if active
+        if (widget.isActive) {
+          _controller?.play();
+        }
       }
     } catch (e) {
       print('Error initializing video: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Failed to load video';
+          _isBuffering = false;
+        });
+      }
+    }
+  }
+
+  void _videoListener() {
+    if (_controller != null && mounted) {
+      final bool isBuffering = _controller!.value.isBuffering;
+      if (_isBuffering != isBuffering) {
+        setState(() {
+          _isBuffering = isBuffering;
+        });
+      }
+    }
+  }
+
+  void _handleActiveStateChange() {
+    if (!_isInitialized || _controller == null) return;
+
+    if (widget.isActive) {
+      _controller?.play();
       setState(() {
-        _hasError = true;
-        _isVideoInitialized = false;
+        _showPlayButton = false;
       });
-    }
-  }
-
-  Future<void> _playVideo() async {
-    if (_videoController != null && _isVideoInitialized && !_hasError) {
-      try {
-        await _videoController!.play();
-        setState(() => _isPlaying = true);
-      } catch (e) {
-        print('Error playing video: $e');
-      }
-    }
-  }
-
-  Future<void> _pauseVideo() async {
-    if (_videoController != null && _isVideoInitialized) {
-      try {
-        await _videoController!.pause();
-        setState(() => _isPlaying = false);
-      } catch (e) {
-        print('Error pausing video: $e');
-      }
+    } else {
+      _controller?.pause();
     }
   }
 
   void _togglePlayPause() {
-    if (_isPlaying) {
-      _pauseVideo();
+    if (!_isInitialized || _controller == null) return;
+
+    if (_controller!.value.isPlaying) {
+      _controller?.pause();
+      setState(() {
+        _showPlayButton = true;
+      });
     } else {
-      _playVideo();
+      _controller?.play();
+      setState(() {
+        _showPlayButton = false;
+      });
     }
   }
 
-  void _disposeVideo() {
-    _videoController?.dispose();
-    _videoController = null;
-    setState(() {
-      _isVideoInitialized = false;
-      _isPlaying = false;
-    });
+  Widget _buildVideoControls() {
+    if (!_showPlayButton && !_isBuffering) return Container();
+
+    return Container(
+      color: Colors.black26,
+      child: Center(
+        child: AnimatedOpacity(
+          opacity: _showPlayButton || _isBuffering ? 1.0 : 0.0,
+          duration: Duration(milliseconds: 300),
+          child: _isBuffering
+              ? CircularProgressIndicator(
+                  color: Color(0xFFFF6B35),
+                  strokeWidth: 3,
+                )
+              : GestureDetector(
+                  onTap: _togglePlayPause,
+                  child: Container(
+                    padding: EdgeInsets.all(4.w),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.play_arrow,
+                      color: Colors.white,
+                      size: 40.sp,
+                    ),
+                  ),
+                ),
+        ),
+      ),
+    );
   }
 
-  @override
-  void dispose() {
-    _likeAnimationController.dispose();
-    _disposeVideo();
-    super.dispose();
+  Widget _buildErrorWidget() {
+    final thumbnailUrl = widget.video['thumbnail_url'] as String?;
+
+    return Container(
+      color: Colors.black,
+      child: Stack(
+        children: [
+          // Show thumbnail as background if available
+          if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
+            Positioned.fill(
+              child: CachedNetworkImage(
+                imageUrl: thumbnailUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  color: Colors.grey[900],
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFFFF6B35),
+                      strokeWidth: 2,
+                    ),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: Colors.grey[900],
+                  child: Icon(
+                    Icons.broken_image,
+                    color: Colors.white54,
+                    size: 40.sp,
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(color: Colors.grey[900]),
+
+          // Error overlay
+          Container(
+            color: Colors.black54,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.video_library_outlined,
+                    color: Color(0xFFFF6B35),
+                    size: 48.sp,
+                  ),
+                  SizedBox(height: 2.h),
+                  Text(
+                    'Video unavailable',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (_errorMessage != null) ...[
+                    SizedBox(height: 1.h),
+                    Text(
+                      _errorMessage!,
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12.sp,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  SizedBox(height: 2.h),
+                  ElevatedButton.icon(
+                    onPressed: _initializeVideo,
+                    icon: Icon(Icons.refresh, size: 16.sp),
+                    label: Text('Retry'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFFFF6B35),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 4.w,
+                        vertical: 1.h,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  void _triggerLikeAnimation() {
-    setState(() {
-      _showLikeAnimation = true;
-    });
-    _likeAnimationController.forward().then((_) {
-      _likeAnimationController.reset();
-      setState(() {
-        _showLikeAnimation = false;
-      });
-    });
-    widget.onDoubleTap?.call();
+  Widget _buildLoadingWidget() {
+    final thumbnailUrl = widget.video['thumbnail_url'] as String?;
+
+    return Container(
+      color: Colors.black,
+      child: Stack(
+        children: [
+          // Show thumbnail while loading if available
+          if (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
+            Positioned.fill(
+              child: CachedNetworkImage(
+                imageUrl: thumbnailUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  color: Colors.grey[900],
+                ),
+                errorWidget: (context, url, error) => Container(
+                  color: Colors.grey[900],
+                ),
+              ),
+            )
+          else
+            Container(color: Colors.grey[900]),
+
+          // Loading overlay
+          Container(
+            color: Colors.black38,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    color: Color(0xFFFF6B35),
+                    strokeWidth: 3,
+                  ),
+                  SizedBox(height: 2.h),
+                  Text(
+                    'Loading video...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14.sp,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-        onDoubleTap: _triggerLikeAnimation,
-        onLongPress: widget.onLongPress,
-        onTap: () {
-          if (_isVideoInitialized) {
-            _togglePlayPause();
-          }
-        },
-        child: Container(
-            width: 100.w,
-            height: 100.h,
-            color: Colors.black,
-            child: Stack(fit: StackFit.expand, children: [
-              // Video or thumbnail
-              if (_isVideoInitialized && !_hasError && _videoController != null)
-                Center(
-                    child: AspectRatio(
-                        aspectRatio: _videoController!.value.aspectRatio,
-                        child: VideoPlayer(_videoController!)))
-              else if (_hasError)
-                // Show thumbnail as fallback
-                _buildThumbnailFallback()
-              else
-                // Loading state
-                _buildLoadingState(),
-
-              // Play/Pause overlay when not playing or loading
-              if (_isVideoInitialized && !_isPlaying && !_hasError)
-                Container(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    child: Center(
-                        child: CustomIconWidget(
-                            iconName: 'play_arrow',
-                            color: Colors.white,
-                            size: 20.w))),
-
-              // Loading overlay
-              if (!_isVideoInitialized && !_hasError)
-                Container(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    child: Center(
-                        child: CircularProgressIndicator(
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                            strokeWidth: 2.0))),
-
-              // Error overlay
-              if (_hasError)
-                Positioned(
-                    bottom: 20.h,
-                    left: 4.w,
-                    right: 4.w,
-                    child: Container(
-                        padding: EdgeInsets.all(3.w),
-                        decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.7),
-                            borderRadius: BorderRadius.circular(8)),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.warning, color: Colors.orange, size: 4.w),
-                          SizedBox(width: 2.w),
-                          Expanded(
-                              child: Text(
-                                  'Video unavailable - showing thumbnail',
-                                  style: TextStyle(
-                                      color: Colors.white, fontSize: 12.sp))),
-                        ]))),
-
-              // Like animation overlay
-              if (_showLikeAnimation)
-                Center(
-                    child: AnimatedBuilder(
-                        animation: _likeAnimation,
-                        builder: (context, child) {
-                          return Transform.scale(
-                              scale: _likeAnimation.value,
-                              child: Opacity(
-                                  opacity: 1.0 - _likeAnimation.value,
-                                  child: CustomIconWidget(
-                                      iconName: 'favorite',
-                                      color: Colors.red,
-                                      size: 25.w)));
-                        })),
-
-              // Video quality indicator
-              Positioned(
-                  top: 8.h,
-                  left: 4.w,
-                  child: Container(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: 2.w, vertical: 0.5.h),
-                      decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(12)),
-                      child: Text(
-                          _isVideoInitialized && !_hasError
-                              ? 'HD'
-                              : _hasError
-                                  ? 'Error'
-                                  : 'Loading...',
-                          style: AppTheme.lightTheme.textTheme.labelSmall
-                              ?.copyWith(
-                                  color:
-                                      _hasError ? Colors.orange : Colors.white,
-                                  fontSize: 10.sp)))),
-            ])));
-  }
-
-  Widget _buildThumbnailFallback() {
-    return CustomImageWidget(
-        imageUrl: (widget.video['thumbnail_url'] as String?) ?? '',
-        width: 100.w,
-        height: 100.h,
-        fit: BoxFit.cover);
-  }
-
-  Widget _buildLoadingState() {
-    return CustomImageWidget(
-        imageUrl: (widget.video['thumbnail_url'] as String?) ?? '',
-        width: 100.w,
-        height: 100.h,
-        fit: BoxFit.cover);
+      onTap: _togglePlayPause,
+      onDoubleTap: widget.onDoubleTap,
+      onLongPress: widget.onLongPress,
+      child: Container(
+        width: double.infinity,
+        height: double.infinity,
+        color: Colors.black,
+        child: _hasError
+            ? _buildErrorWidget()
+            : !_isInitialized
+                ? _buildLoadingWidget()
+                : Stack(
+                    children: [
+                      // Video player
+                      Positioned.fill(
+                        child: AspectRatio(
+                          aspectRatio: _controller!.value.aspectRatio,
+                          child: VideoPlayer(_controller!),
+                        ),
+                      ),
+                      // Controls overlay
+                      Positioned.fill(
+                        child: _buildVideoControls(),
+                      ),
+                      // Progress indicator at bottom
+                      if (_isInitialized && widget.isActive)
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: VideoProgressIndicator(
+                            _controller!,
+                            allowScrubbing: true,
+                            padding: EdgeInsets.symmetric(horizontal: 2.w),
+                            colors: VideoProgressColors(
+                              playedColor: Color(0xFFFF6B35),
+                              bufferedColor: Colors.white30,
+                              backgroundColor: Colors.white10,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+      ),
+    );
   }
 }
