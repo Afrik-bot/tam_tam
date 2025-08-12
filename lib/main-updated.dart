@@ -28,6 +28,13 @@ void main() async {
     debugPrint('Failed to initialize Supabase: $e');
   }
 
+  // Initialize Supabase
+  try {
+    await SupabaseService.instance.initialize();
+  } catch (e) {
+    debugPrint('Failed to initialize Supabase: $e');
+  }
+
   runApp(const TamTamApp());
 }
 
@@ -67,8 +74,7 @@ class TamTamApp extends StatelessWidget {
       },
     );
   }
-}
-final ValueNotifier<String> currentPageNotifier = ValueNotifier<String>('');
+}final ValueNotifier<String> currentPageNotifier = ValueNotifier<String>('');
 
 class MyRouteObserver1 extends RouteObserver<PageRoute<dynamic>> {
   void _updateCurrentPage(Route<dynamic>? route) {

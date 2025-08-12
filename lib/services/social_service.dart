@@ -1,32 +1,58 @@
+import '../models/user_profile.dart';
+import '../models/content.dart';
+import '../models/notification.dart';
 import './supabase_service.dart';
 
 class SocialService {
   static final _supabase = SupabaseService.instance;
 
-  // Remove all mock data and use real Supabase data
-  static Future<Map<String, dynamic>> getUserProfile(String userId) async {
+  static Future<UserProfile> getUserProfile(String userId) async {
     try {
-      return await _supabase.getUserProfile(userId);
+      final response = await _supabase.client
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+      return UserProfile.fromJson(response);
     } catch (e) {
       throw Exception('Failed to load user profile: $e');
     }
   }
 
-  static Future<Map<String, dynamic>?> getCurrentUserProfile() async {
+  static Future<UserProfile?> getCurrentUserProfile() async {
     final userId = _supabase.currentUser?.id;
     if (userId == null) return null;
 
     try {
-      return await _supabase.getUserProfile(userId);
+      return await getUserProfile(userId);
     } catch (e) {
       return null;
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getUserContent(
-      String userId) async {
+  static Future<List<Content>> getUserContent(String userId) async {
     try {
-      return await _supabase.getUserContent(userId);
+      final response = await _supabase.client
+          .from('content')
+          .select('''
+            *,
+            user_profiles!creator_id (
+              id,
+              username,
+              full_name,
+              avatar_url,
+              verified,
+              clout_score,
+              followers_count,
+              following_count
+            )
+          ''')
+          .eq('creator_id', userId)
+          .eq('is_public', true)
+          .order('created_at', ascending: false);
+
+      return response.map<Content>((json) => Content.fromJson(json)).toList();
     } catch (e) {
       throw Exception('Failed to load user content: $e');
     }
@@ -37,7 +63,11 @@ class SocialService {
     if (currentUserId == null) throw Exception('User not authenticated');
 
     try {
-      await _supabase.followUser(currentUserId, userId);
+      await _supabase.client.from('user_relationships').insert({
+        'follower_id': currentUserId,
+        'following_id': userId,
+        'type': 'following',
+      });
     } catch (e) {
       throw Exception('Failed to follow user: $e');
     }
@@ -48,7 +78,11 @@ class SocialService {
     if (currentUserId == null) throw Exception('User not authenticated');
 
     try {
-      await _supabase.unfollowUser(currentUserId, userId);
+      await _supabase.client
+          .from('user_relationships')
+          .delete()
+          .eq('follower_id', currentUserId)
+          .eq('following_id', userId);
     } catch (e) {
       throw Exception('Failed to unfollow user: $e');
     }
@@ -59,25 +93,43 @@ class SocialService {
     if (currentUserId == null) return false;
 
     try {
-      return await _supabase.isFollowing(currentUserId, userId);
+      final response = await _supabase.client
+          .from('user_relationships')
+          .select('id')
+          .eq('follower_id', currentUserId)
+          .eq('following_id', userId)
+          .eq('type', 'following');
+
+      return response.isNotEmpty;
     } catch (e) {
       return false;
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getFollowers(String userId) async {
+  static Future<List<UserProfile>> getFollowers(String userId) async {
     try {
       final response = await _supabase.client
           .from('user_relationships')
           .select('''
-            follower:user_profiles!follower_id (
+            user_profiles!follower_id (
               id,
               username,
               full_name,
               avatar_url,
               verified,
               clout_score,
-              followers_count
+              followers_count,
+              following_count,
+              email,
+              bio,
+              cover_image_url,
+              country_code,
+              language_preference,
+              role,
+              is_active,
+              total_tips_received,
+              created_at,
+              updated_at
             )
           ''')
           .eq('following_id', userId)
@@ -85,26 +137,38 @@ class SocialService {
           .order('created_at', ascending: false);
 
       return response
-          .map<Map<String, dynamic>>((item) => item['follower'])
+          .map<UserProfile>((item) => UserProfile.fromJson(
+              item['user_profiles'] as Map<String, dynamic>))
           .toList();
     } catch (e) {
       throw Exception('Failed to load followers: $e');
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getFollowing(String userId) async {
+  static Future<List<UserProfile>> getFollowing(String userId) async {
     try {
       final response = await _supabase.client
           .from('user_relationships')
           .select('''
-            following:user_profiles!following_id (
+            user_profiles!following_id (
               id,
               username,
               full_name,
               avatar_url,
               verified,
               clout_score,
-              followers_count
+              followers_count,
+              following_count,
+              email,
+              bio,
+              cover_image_url,
+              country_code,
+              language_preference,
+              role,
+              is_active,
+              total_tips_received,
+              created_at,
+              updated_at
             )
           ''')
           .eq('follower_id', userId)
@@ -112,14 +176,15 @@ class SocialService {
           .order('created_at', ascending: false);
 
       return response
-          .map<Map<String, dynamic>>((item) => item['following'])
+          .map<UserProfile>((item) => UserProfile.fromJson(
+              item['user_profiles'] as Map<String, dynamic>))
           .toList();
     } catch (e) {
       throw Exception('Failed to load following: $e');
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getNotifications() async {
+  static Future<List<NotificationModel>> getNotifications() async {
     final userId = _supabase.currentUser?.id;
     if (userId == null) throw Exception('User not authenticated');
 
@@ -128,14 +193,58 @@ class SocialService {
           .from('notifications')
           .select('''
             *,
-            sender:user_profiles!sender_id (username, full_name, avatar_url, verified),
-            content:content!content_id (id, title, thumbnail_url)
+            sender:user_profiles!sender_id (
+              id,
+              username,
+              full_name,
+              avatar_url,
+              verified,
+              clout_score,
+              followers_count,
+              following_count,
+              email,
+              bio,
+              cover_image_url,
+              country_code,
+              language_preference,
+              role,
+              is_active,
+              total_tips_received,
+              created_at,
+              updated_at
+            ),
+            content:content!content_id (
+              id,
+              creator_id,
+              type,
+              title,
+              description,
+              video_url,
+              thumbnail_url,
+              audio_url,
+              tags,
+              location,
+              is_public,
+              allows_comments,
+              allows_duets,
+              featured,
+              view_count,
+              like_count,
+              comment_count,
+              share_count,
+              tip_count,
+              total_tips_amount,
+              created_at,
+              updated_at
+            )
           ''')
           .eq('user_id', userId)
           .order('created_at', ascending: false)
           .limit(50);
 
-      return List<Map<String, dynamic>>.from(response);
+      return response
+          .map<NotificationModel>((json) => NotificationModel.fromJson(json))
+          .toList();
     } catch (e) {
       throw Exception('Failed to load notifications: $e');
     }
@@ -160,15 +269,16 @@ class SocialService {
           .from('notifications')
           .select('*')
           .eq('user_id', userId)
-          .eq('read', false);
+          .eq('read', false)
+          .count();
 
-      return response.length;
+      return response.count ?? 0;
     } catch (e) {
       return 0;
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getTrendingUsers() async {
+  static Future<List<UserProfile>> getTrendingUsers() async {
     try {
       final response = await _supabase.client
           .from('user_profiles')
@@ -177,13 +287,15 @@ class SocialService {
           .order('clout_score', ascending: false)
           .limit(20);
 
-      return List<Map<String, dynamic>>.from(response);
+      return response
+          .map<UserProfile>((json) => UserProfile.fromJson(json))
+          .toList();
     } catch (e) {
       throw Exception('Failed to load trending users: $e');
     }
   }
 
-  static Future<List<Map<String, dynamic>>> searchUsers(String query) async {
+  static Future<List<UserProfile>> searchUsers(String query) async {
     try {
       final response = await _supabase.client
           .from('user_profiles')
@@ -193,7 +305,9 @@ class SocialService {
           .order('followers_count', ascending: false)
           .limit(20);
 
-      return List<Map<String, dynamic>>.from(response);
+      return response
+          .map<UserProfile>((json) => UserProfile.fromJson(json))
+          .toList();
     } catch (e) {
       throw Exception('Failed to search users: $e');
     }

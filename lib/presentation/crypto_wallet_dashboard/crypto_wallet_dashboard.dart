@@ -5,6 +5,7 @@ import '../../core/app_export.dart';
 import '../../routes/app_routes.dart';
 import '../../services/auth_service.dart';
 import '../../services/wallet_service.dart';
+import '../../models/wallet.dart';
 import './widgets/currency_card.dart';
 import './widgets/portfolio_value_card.dart';
 import './widgets/quick_actions_fab.dart';
@@ -19,9 +20,9 @@ class CryptoWalletDashboard extends StatefulWidget {
 }
 
 class _CryptoWalletDashboardState extends State<CryptoWalletDashboard> {
-  Map<String, dynamic>? _walletData;
+  Wallet? _wallet;
   Map<String, dynamic>? _portfolioStats;
-  List<Map<String, dynamic>> _recentTransactions = [];
+  List<WalletTransaction> _recentTransactions = [];
   bool _isLoading = true;
 
   @override
@@ -45,7 +46,7 @@ class _CryptoWalletDashboardState extends State<CryptoWalletDashboard> {
       final transactions = await WalletService.getTransactionHistory();
 
       setState(() {
-        _walletData = wallet;
+        _wallet = wallet;
         _portfolioStats = portfolioStats;
         _recentTransactions = transactions.take(5).toList();
         _isLoading = false;
@@ -174,8 +175,9 @@ class _CryptoWalletDashboardState extends State<CryptoWalletDashboard> {
 
               // TAM Token Card (Featured)
               TamTokenCard(
-                tamTokenBalance: 0.0,
-                tamTokenValue: 0.0,
+                tamTokenBalance: _wallet?.tamTokenBalance ?? 0.0,
+                tamTokenValue: (_wallet?.tamTokenBalance ?? 0.0) *
+                    0.1, // Mock conversion rate
                 onEarnMore: () {},
               ),
 
@@ -186,7 +188,7 @@ class _CryptoWalletDashboardState extends State<CryptoWalletDashboard> {
                 currency: {
                   'name': 'US Dollar',
                   'symbol': 'USD',
-                  'balance': _walletData?['usd_balance'] ?? 0.0,
+                  'balance': _wallet?.usdBalance ?? 0.0,
                   'change': 0.0,
                   'icon': null,
                 },
@@ -201,7 +203,7 @@ class _CryptoWalletDashboardState extends State<CryptoWalletDashboard> {
                 currency: {
                   'name': 'Bitcoin',
                   'symbol': 'BTC',
-                  'balance': _walletData?['btc_balance'] ?? 0.0,
+                  'balance': _wallet?.btcBalance ?? 0.0,
                   'change': 2.45,
                   'icon': null,
                 },
@@ -216,7 +218,7 @@ class _CryptoWalletDashboardState extends State<CryptoWalletDashboard> {
                 currency: {
                   'name': 'Ethereum',
                   'symbol': 'ETH',
-                  'balance': _walletData?['eth_balance'] ?? 0.0,
+                  'balance': _wallet?.ethBalance ?? 0.0,
                   'change': -1.23,
                   'icon': null,
                 },
@@ -253,12 +255,9 @@ class _CryptoWalletDashboardState extends State<CryptoWalletDashboard> {
             ])));
   }
 
-  Widget _buildTransactionTile(Map<String, dynamic> transaction) {
-    final isReceived = transaction['to_user_id'] == AuthService.currentUser?.id;
-    final amount = transaction['amount'] ?? 0.0;
-    final currency = transaction['currency'] ?? 'tam_token';
-    final transactionType = transaction['transaction_type'] ?? 'unknown';
-    final createdAt = DateTime.tryParse(transaction['created_at'] ?? '');
+  Widget _buildTransactionTile(WalletTransaction transaction) {
+    final isReceived = transaction.toUserId == AuthService.currentUser?.id;
+    final transactionType = transaction.transactionType;
 
     return Container(
         margin: EdgeInsets.symmetric(horizontal: 4.w, vertical: 0.5.h),
@@ -287,36 +286,19 @@ class _CryptoWalletDashboardState extends State<CryptoWalletDashboard> {
                         fontSize: 14.sp,
                         color: Colors.white,
                         fontWeight: FontWeight.w500)),
-                if (createdAt != null)
-                  Text(_formatDate(createdAt),
-                      style: TextStyle(fontSize: 12.sp, color: Colors.white54)),
+                Text(transaction.timeAgo,
+                    style: TextStyle(fontSize: 12.sp, color: Colors.white54)),
               ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(
-                '${isReceived ? '+' : '-'}${amount.toStringAsFixed(currency == 'usd' ? 2 : 8)}',
+            Text(transaction.formattedAmount,
                 style: TextStyle(
                     fontSize: 14.sp,
                     color: isReceived ? Colors.green : Colors.red,
                     fontWeight: FontWeight.w600)),
-            Text(currency.toUpperCase(),
+            Text(transaction.currency.toString().split('.').last.toUpperCase(),
                 style: TextStyle(fontSize: 12.sp, color: Colors.white54)),
           ]),
         ]));
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
-    } else {
-      return 'Just now';
-    }
   }
 
   void _showWalletMenu() {

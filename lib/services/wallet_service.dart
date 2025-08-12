@@ -1,26 +1,82 @@
+import '../models/wallet.dart';
 import './supabase_service.dart';
 
 class WalletService {
   static final _supabase = SupabaseService.instance;
 
-  // Remove all mock data and use real Supabase data
-  static Future<Map<String, dynamic>> getUserWallet() async {
+  static Future<Wallet> getUserWallet() async {
     final userId = _supabase.currentUser?.id;
     if (userId == null) throw Exception('User not authenticated');
 
     try {
-      return await _supabase.getUserWallet(userId);
+      final response = await _supabase.client
+          .from('wallets')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+      return Wallet.fromJson(response);
     } catch (e) {
       throw Exception('Failed to load wallet: $e');
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getTransactionHistory() async {
+  static Future<List<WalletTransaction>> getTransactionHistory() async {
     final userId = _supabase.currentUser?.id;
     if (userId == null) throw Exception('User not authenticated');
 
     try {
-      return await _supabase.getWalletTransactions(userId);
+      final response = await _supabase.client
+          .from('wallet_transactions')
+          .select('''
+            *,
+            from_user:user_profiles!from_user_id (
+              id,
+              username,
+              full_name,
+              avatar_url,
+              verified,
+              clout_score,
+              followers_count,
+              following_count,
+              email,
+              bio,
+              cover_image_url,
+              country_code,
+              language_preference,
+              role,
+              is_active,
+              total_tips_received,
+              created_at,
+              updated_at
+            ),
+            to_user:user_profiles!to_user_id (
+              id,
+              username,
+              full_name,
+              avatar_url,
+              verified,
+              clout_score,
+              followers_count,
+              following_count,
+              email,
+              bio,
+              cover_image_url,
+              country_code,
+              language_preference,
+              role,
+              is_active,
+              total_tips_received,
+              created_at,
+              updated_at
+            )
+          ''')
+          .or('from_user_id.eq.$userId,to_user_id.eq.$userId')
+          .order('created_at', ascending: false);
+
+      return response
+          .map<WalletTransaction>((json) => WalletTransaction.fromJson(json))
+          .toList();
     } catch (e) {
       throw Exception('Failed to load transactions: $e');
     }
@@ -32,7 +88,17 @@ class WalletService {
     if (fromUserId == null) throw Exception('User not authenticated');
 
     try {
-      await _supabase.sendTip(fromUserId, toUserId, amount, contentId);
+      final wallet = await getUserWallet();
+      await _supabase.client.from('wallet_transactions').insert({
+        'from_user_id': fromUserId,
+        'to_user_id': toUserId,
+        'wallet_id': wallet.id,
+        'amount': amount,
+        'currency': 'tam_token',
+        'transaction_type': 'tip',
+        'status': 'completed',
+        'metadata': {'content_id': contentId},
+      });
     } catch (e) {
       throw Exception('Failed to send tip: $e');
     }
@@ -52,7 +118,7 @@ class WalletService {
       await _supabase.client.from('wallet_transactions').insert({
         'from_user_id': fromUserId,
         'to_user_id': recipientId,
-        'wallet_id': wallet['id'],
+        'wallet_id': wallet.id,
         'amount': amount,
         'currency': currency,
         'transaction_type': 'transfer',
@@ -69,24 +135,24 @@ class WalletService {
     if (userId == null) throw Exception('User not authenticated');
 
     try {
-      // Get wallet data
       final wallet = await getUserWallet();
-
-      // Get transaction stats
       final transactions = await getTransactionHistory();
+
       final received = transactions
-          .where((t) => t['to_user_id'] == userId)
-          .fold<double>(0, (sum, t) => sum + (t['amount'] ?? 0));
+          .where((t) => t.toUserId == userId)
+          .fold<double>(0, (sum, t) => sum + t.amount);
+
       final sent = transactions
-          .where((t) => t['from_user_id'] == userId)
-          .fold<double>(0, (sum, t) => sum + (t['amount'] ?? 0));
+          .where((t) => t.fromUserId == userId)
+          .fold<double>(0, (sum, t) => sum + t.amount);
 
       return {
-        'total_balance': wallet['usd_balance'] + wallet['tam_token_balance'],
-        'usd_balance': wallet['usd_balance'],
-        'tam_token_balance': wallet['tam_token_balance'],
-        'btc_balance': wallet['btc_balance'],
-        'eth_balance': wallet['eth_balance'],
+        'total_balance': wallet.totalBalance,
+        'usd_balance': wallet.usdBalance,
+        'tam_token_balance': wallet.tamTokenBalance,
+        'btc_balance': wallet.btcBalance,
+        'eth_balance': wallet.ethBalance,
+        'eur_balance': wallet.eurBalance,
         'total_received': received,
         'total_sent': sent,
         'recent_transactions': transactions.take(5).toList(),
@@ -108,7 +174,21 @@ class WalletService {
               id,
               username,
               full_name,
-              avatar_url
+              avatar_url,
+              verified,
+              clout_score,
+              followers_count,
+              following_count,
+              email,
+              bio,
+              cover_image_url,
+              country_code,
+              language_preference,
+              role,
+              is_active,
+              total_tips_received,
+              created_at,
+              updated_at
             )
           ''')
           .eq('from_user_id', userId)
@@ -139,6 +219,8 @@ class WalletService {
       'btc_to_usd': 43500.0,
       'usd_to_eth': 0.00041,
       'eth_to_usd': 2450.0,
+      'eur_to_usd': 1.08,
+      'usd_to_eur': 0.93,
     };
 
     final key = '${fromCurrency.toLowerCase()}_to_${toCurrency.toLowerCase()}';
@@ -156,7 +238,7 @@ class WalletService {
       final wallet = await getUserWallet();
       await _supabase.client.from('wallet_transactions').insert({
         'to_user_id': userId,
-        'wallet_id': wallet['id'],
+        'wallet_id': wallet.id,
         'amount': tamAmount,
         'currency': 'tam_token',
         'transaction_type': 'purchase',
@@ -179,7 +261,7 @@ class WalletService {
       final wallet = await getUserWallet();
       await _supabase.client.from('wallet_transactions').insert({
         'from_user_id': userId,
-        'wallet_id': wallet['id'],
+        'wallet_id': wallet.id,
         'amount': tamAmount,
         'currency': 'tam_token',
         'transaction_type': 'sale',
@@ -197,14 +279,15 @@ class WalletService {
       final usdRate = await getExchangeRate('tam_token', 'usd');
       final btcRate = await getExchangeRate('btc', 'usd');
       final ethRate = await getExchangeRate('eth', 'usd');
+      final eurRate = await getExchangeRate('eur', 'usd');
 
-      final usdValue = (wallet['usd_balance'] ?? 0.0) as double;
-      final tamValue =
-          ((wallet['tam_token_balance'] ?? 0.0) as double) * usdRate;
-      final btcValue = ((wallet['btc_balance'] ?? 0.0) as double) * btcRate;
-      final ethValue = ((wallet['eth_balance'] ?? 0.0) as double) * ethRate;
+      final usdValue = wallet.usdBalance;
+      final tamValue = wallet.tamTokenBalance * usdRate;
+      final btcValue = wallet.btcBalance * btcRate;
+      final ethValue = wallet.ethBalance * ethRate;
+      final eurValue = wallet.eurBalance * eurRate;
 
-      final totalValue = usdValue + tamValue + btcValue + ethValue;
+      final totalValue = usdValue + tamValue + btcValue + ethValue + eurValue;
 
       return {
         'total_value': totalValue,
@@ -212,6 +295,7 @@ class WalletService {
         'tam_percentage': totalValue > 0 ? (tamValue / totalValue) * 100 : 0,
         'btc_percentage': totalValue > 0 ? (btcValue / totalValue) * 100 : 0,
         'eth_percentage': totalValue > 0 ? (ethValue / totalValue) * 100 : 0,
+        'eur_percentage': totalValue > 0 ? (eurValue / totalValue) * 100 : 0,
         'daily_change': 0.0, // Would need historical data for this
         'weekly_change': 0.0, // Would need historical data for this
       };

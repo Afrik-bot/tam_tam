@@ -14,6 +14,13 @@ void main() async {
     debugPrint('Failed to initialize Supabase: $e');
   }
 
+  // Initialize Supabase
+  try {
+    await SupabaseService.instance.initialize();
+  } catch (e) {
+    debugPrint('Failed to initialize Supabase: $e');
+  }
+
   runApp(const TamTamApp());
 }
 

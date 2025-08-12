@@ -5,6 +5,8 @@ import '../../core/app_export.dart';
 import '../../routes/app_routes.dart';
 import '../../services/auth_service.dart';
 import '../../services/content_service.dart';
+import '../../models/content.dart';
+import '../../models/comment.dart';
 import './widgets/video_bottom_overlay_widget.dart';
 import './widgets/video_player_widget.dart';
 import './widgets/video_sidebar_widget.dart';
@@ -19,7 +21,7 @@ class MainVideoFeed extends StatefulWidget {
 class _MainVideoFeedState extends State<MainVideoFeed>
     with WidgetsBindingObserver {
   final PageController _pageController = PageController();
-  List<Map<String, dynamic>> _videos = [];
+  List<Content> _videos = [];
   bool _isLoading = true;
   int _currentPage = 0;
   String? _errorMessage;
@@ -44,7 +46,6 @@ class _MainVideoFeedState extends State<MainVideoFeed>
     // Pause videos when app goes to background
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      // Videos will be paused automatically by setting isActive to false
       setState(() {});
     }
   }
@@ -112,81 +113,69 @@ class _MainVideoFeedState extends State<MainVideoFeed>
     }
   }
 
-  List<Map<String, dynamic>> _getPreviewContent() {
+  List<Content> _getPreviewContent() {
     // Fallback content for preview or when database is empty
     return [
-      {
-        'id': 'preview_1',
-        'title': 'Welcome to Tam Tam!',
-        'description':
+      Content(
+        id: 'preview_1',
+        creatorId: 'tamtam_official',
+        type: ContentType.video,
+        title: 'Welcome to Tam Tam!',
+        description:
             'Create, Connect, and Earn with amazing video content. Join our community today!',
-        'video_url':
+        videoUrl:
             'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
-        'thumbnail_url': 'https://picsum.photos/400/600?random=1',
-        'creator_username': 'tamtam_official',
-        'creator_full_name': 'Tam Tam Official',
-        'creator_avatar_url':
-            'https://ui-avatars.com/api/?name=TamTam&background=FF6B35&color=fff&size=150',
-        'creator_verified': true,
-        'creator_followers_count': 10000,
-        'view_count': 50000,
-        'like_count': 2500,
-        'comment_count': 180,
-        'share_count': 320,
-        'allows_comments': true,
-        'allows_duets': true,
-        'tags': ['welcome', 'tamtam', 'community'],
-        'created_at':
-            DateTime.now().subtract(Duration(hours: 2)).toIso8601String(),
-      },
-      {
-        'id': 'preview_2',
-        'title': 'Amazing Dance Moves',
-        'description':
+        thumbnailUrl: 'https://picsum.photos/400/600?random=1',
+        tags: ['welcome', 'tamtam', 'community'],
+        allowsComments: true,
+        allowsDuets: true,
+        viewCount: 50000,
+        likeCount: 2500,
+        commentCount: 180,
+        shareCount: 320,
+        createdAt: DateTime.now().subtract(Duration(hours: 2)),
+        updatedAt: DateTime.now().subtract(Duration(hours: 2)),
+      ),
+      Content(
+        id: 'preview_2',
+        creatorId: 'dance_star',
+        type: ContentType.video,
+        title: 'Amazing Dance Moves',
+        description:
             'Check out these incredible dance moves! 🔥 #dance #trending',
-        'video_url':
+        videoUrl:
             'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4',
-        'thumbnail_url': 'https://picsum.photos/400/600?random=2',
-        'creator_username': 'dance_star',
-        'creator_full_name': 'Dance Star',
-        'creator_avatar_url':
-            'https://ui-avatars.com/api/?name=DS&background=random&size=150',
-        'creator_verified': false,
-        'creator_followers_count': 5600,
-        'view_count': 28000,
-        'like_count': 1800,
-        'comment_count': 95,
-        'share_count': 210,
-        'allows_comments': true,
-        'allows_duets': true,
-        'tags': ['dance', 'trending', 'moves'],
-        'created_at':
-            DateTime.now().subtract(Duration(hours: 5)).toIso8601String(),
-      },
-      {
-        'id': 'preview_3',
-        'title': 'Cooking Magic',
-        'description':
+        thumbnailUrl: 'https://picsum.photos/400/600?random=2',
+        tags: ['dance', 'trending', 'moves'],
+        allowsComments: true,
+        allowsDuets: true,
+        viewCount: 28000,
+        likeCount: 1800,
+        commentCount: 95,
+        shareCount: 210,
+        createdAt: DateTime.now().subtract(Duration(hours: 5)),
+        updatedAt: DateTime.now().subtract(Duration(hours: 5)),
+      ),
+      Content(
+        id: 'preview_3',
+        creatorId: 'chef_master',
+        type: ContentType.video,
+        title: 'Cooking Magic',
+        description:
             'Learn this amazing recipe in just 60 seconds! Perfect for beginners 👨‍🍳',
-        'video_url':
+        videoUrl:
             'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
-        'thumbnail_url': 'https://picsum.photos/400/600?random=3',
-        'creator_username': 'chef_master',
-        'creator_full_name': 'Chef Master',
-        'creator_avatar_url':
-            'https://ui-avatars.com/api/?name=CM&background=random&size=150',
-        'creator_verified': true,
-        'creator_followers_count': 8900,
-        'view_count': 42000,
-        'like_count': 3200,
-        'comment_count': 256,
-        'share_count': 580,
-        'allows_comments': true,
-        'allows_duets': false,
-        'tags': ['cooking', 'recipe', 'food', 'tutorial'],
-        'created_at':
-            DateTime.now().subtract(Duration(hours: 8)).toIso8601String(),
-      },
+        thumbnailUrl: 'https://picsum.photos/400/600?random=3',
+        tags: ['cooking', 'recipe', 'food', 'tutorial'],
+        allowsComments: true,
+        allowsDuets: false,
+        viewCount: 42000,
+        likeCount: 3200,
+        commentCount: 256,
+        shareCount: 580,
+        createdAt: DateTime.now().subtract(Duration(hours: 8)),
+        updatedAt: DateTime.now().subtract(Duration(hours: 8)),
+      ),
     ];
   }
 
@@ -395,29 +384,54 @@ class _MainVideoFeedState extends State<MainVideoFeed>
               return Stack(children: [
                 // Video player with improved state management
                 VideoPlayerWidget(
-                  video: video,
+                  video: _convertToMap(video),
                   isActive: index == _currentPage,
-                  onDoubleTap: () => _handleLike(video['id'] ?? ''),
+                  onDoubleTap: () => _handleLike(video.id),
                   onLongPress: () => _showQuickActions(video),
                 ),
 
                 // Bottom overlay with video info
-                VideoBottomOverlayWidget(video: video),
+                VideoBottomOverlayWidget(video: _convertToMap(video)),
 
                 // Right sidebar with actions
                 VideoSidebarWidget(
-                  video: video,
-                  onLike: () => _handleLike(video['id'] ?? ''),
-                  onComment: () => _handleComment(video['id'] ?? ''),
-                  onShare: () => _handleShare(video['id'] ?? ''),
-                  onTip: () =>
-                      _handleTip(video['creator_id'] ?? '', video['id'] ?? ''),
+                  video: _convertToMap(video),
+                  onLike: () => _handleLike(video.id),
+                  onComment: () => _handleComment(video.id),
+                  onShare: () => _handleShare(video.id),
+                  onTip: () => _handleTip(video.creatorId, video.id),
                 ),
               ]);
             }));
   }
 
-  void _showQuickActions(Map<String, dynamic> video) {
+  // Helper method to convert Content to Map for backward compatibility with widgets
+  Map<String, dynamic> _convertToMap(Content content) {
+    return {
+      'id': content.id,
+      'title': content.title,
+      'description': content.description,
+      'video_url': content.videoUrlWithFallback,
+      'thumbnail_url': content.thumbnailUrlWithFallback,
+      'creator_id': content.creatorId,
+      'creator_username': content.creator?.username ?? 'Unknown',
+      'creator_full_name': content.creator?.fullName ?? 'Unknown User',
+      'creator_avatar_url': content.creator?.avatarUrlWithFallback ??
+          'https://ui-avatars.com/api/?name=User&background=random&size=150',
+      'creator_verified': content.creator?.verified ?? false,
+      'creator_followers_count': content.creator?.followersCount ?? 0,
+      'view_count': content.viewCount,
+      'like_count': content.likeCount,
+      'comment_count': content.commentCount,
+      'share_count': content.shareCount,
+      'allows_comments': content.allowsComments,
+      'allows_duets': content.allowsDuets,
+      'tags': content.tags,
+      'created_at': content.createdAt.toIso8601String(),
+    };
+  }
+
+  void _showQuickActions(Content video) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -446,7 +460,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                   style: TextStyle(color: Colors.white, fontSize: 16.sp)),
               onTap: () {
                 Navigator.pop(context);
-                _saveVideo(video['id']);
+                _saveVideo(video.id);
               },
             ),
             ListTile(
@@ -456,7 +470,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                   style: TextStyle(color: Colors.white, fontSize: 16.sp)),
               onTap: () {
                 Navigator.pop(context);
-                _handleShare(video['id']);
+                _handleShare(video.id);
               },
             ),
             ListTile(
@@ -466,10 +480,10 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                   style: TextStyle(color: Colors.white, fontSize: 16.sp)),
               onTap: () {
                 Navigator.pop(context);
-                _viewProfile(video['creator_id']);
+                _viewProfile(video.creatorId);
               },
             ),
-            if (video['allows_duets'] == true)
+            if (video.allowsDuets == true)
               ListTile(
                 leading:
                     Icon(Icons.duo_outlined, color: Colors.white, size: 24.sp),
@@ -487,7 +501,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                   style: TextStyle(color: Colors.red, fontSize: 16.sp)),
               onTap: () {
                 Navigator.pop(context);
-                _reportContent(video['id']);
+                _reportContent(video.id);
               },
             ),
           ],
@@ -497,7 +511,6 @@ class _MainVideoFeedState extends State<MainVideoFeed>
   }
 
   Future<void> _saveVideo(String contentId) async {
-    // Implementation for saving video
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -508,12 +521,11 @@ class _MainVideoFeedState extends State<MainVideoFeed>
     }
   }
 
-  void _createDuet(Map<String, dynamic> video) {
-    // Navigate to video creation with duet option
+  void _createDuet(Content video) {
     Navigator.pushNamed(
       context,
       AppRoutes.videoCreationStudio,
-      arguments: {'duet_with': video},
+      arguments: {'duet_with': _convertToMap(video)},
     );
   }
 
@@ -541,8 +553,8 @@ class _MainVideoFeedState extends State<MainVideoFeed>
     }
   }
 
-  void _viewProfile(String? creatorId) {
-    if (creatorId != null && creatorId.isNotEmpty) {
+  void _viewProfile(String creatorId) {
+    if (creatorId.isNotEmpty) {
       Navigator.pushNamed(
         context,
         AppRoutes.userProfile,
@@ -561,10 +573,11 @@ class _MainVideoFeedState extends State<MainVideoFeed>
       await ContentService.likeContent(contentId);
       // Update local state optimistically
       setState(() {
-        final index = _videos.indexWhere((v) => v['id'] == contentId);
+        final index = _videos.indexWhere((v) => v.id == contentId);
         if (index != -1) {
-          _videos[index]['like_count'] =
-              (_videos[index]['like_count'] ?? 0) + 1;
+          _videos[index] = _videos[index].copyWith(
+            likeCount: _videos[index].likeCount + 1,
+          );
         }
       });
     } catch (e) {
@@ -585,7 +598,6 @@ class _MainVideoFeedState extends State<MainVideoFeed>
       return;
     }
 
-    // Show comments bottom sheet
     showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -621,7 +633,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                   )),
               const Divider(color: Colors.white24),
               Expanded(
-                  child: FutureBuilder<List<Map<String, dynamic>>>(
+                  child: FutureBuilder<List<Comment>>(
                 future: ContentService.getContentComments(contentId),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -688,7 +700,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
             ])));
   }
 
-  Widget _buildCommentItem(Map<String, dynamic> comment) {
+  Widget _buildCommentItem(Comment comment) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
       child: Row(
@@ -697,8 +709,8 @@ class _MainVideoFeedState extends State<MainVideoFeed>
           CircleAvatar(
             radius: 20.sp,
             backgroundImage: NetworkImage(
-              comment['avatar_url'] ??
-                  'https://ui-avatars.com/api/?name=${comment['username'] ?? 'User'}&background=random&size=150',
+              comment.user?.avatarUrlWithFallback ??
+                  'https://ui-avatars.com/api/?name=User&background=random&size=150',
             ),
           ),
           SizedBox(width: 3.w),
@@ -709,14 +721,14 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                 Row(
                   children: [
                     Text(
-                      comment['username'] ?? 'Unknown User',
+                      comment.user?.username ?? 'Unknown User',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 14.sp,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    if (comment['verified'] == true) ...[
+                    if (comment.user?.verified == true) ...[
                       SizedBox(width: 1.w),
                       Icon(
                         Icons.verified,
@@ -726,7 +738,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                     ],
                     Spacer(),
                     Text(
-                      _formatTimeAgo(comment['created_at']),
+                      comment.timeAgo,
                       style: TextStyle(
                         color: Colors.white54,
                         fontSize: 12.sp,
@@ -736,7 +748,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
                 ),
                 SizedBox(height: 0.5.h),
                 Text(
-                  comment['text_content'] ?? '',
+                  comment.textContent,
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 14.sp,
@@ -826,30 +838,6 @@ class _MainVideoFeedState extends State<MainVideoFeed>
     );
   }
 
-  String _formatTimeAgo(String? createdAt) {
-    if (createdAt == null) return '';
-
-    try {
-      final DateTime commentTime = DateTime.parse(createdAt);
-      final DateTime now = DateTime.now();
-      final Duration difference = now.difference(commentTime);
-
-      if (difference.inDays > 7) {
-        return '${commentTime.day}/${commentTime.month}';
-      } else if (difference.inDays > 0) {
-        return '${difference.inDays}d ago';
-      } else if (difference.inHours > 0) {
-        return '${difference.inHours}h ago';
-      } else if (difference.inMinutes > 0) {
-        return '${difference.inMinutes}m ago';
-      } else {
-        return 'now';
-      }
-    } catch (e) {
-      return '';
-    }
-  }
-
   Future<void> _handleShare(String contentId) async {
     try {
       await ContentService.shareContent(contentId);
@@ -879,7 +867,6 @@ class _MainVideoFeedState extends State<MainVideoFeed>
       return;
     }
 
-    // Show tip dialog
     showDialog(
         context: context,
         builder: (context) => AlertDialog(
