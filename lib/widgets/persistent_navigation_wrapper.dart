@@ -30,7 +30,6 @@ class _PersistentNavigationWrapperState
     const MainVideoFeed(),
     const LiveStreamingInterface(),
     const VideoCreationStudio(),
-    // Removed: const CryptoWalletDashboard(),
     const UserProfileScreen(),
   ];
 
@@ -38,6 +37,19 @@ class _PersistentNavigationWrapperState
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+  }
+
+  void _onTabTapped(int index) {
+    if (index == 3) {
+      // Wallet tab - navigate to send money screen
+      Navigator.pushNamed(context, AppRoutes.sendMoney);
+    } else {
+      setState(() {
+        _currentIndex = index >= 3
+            ? index - 1
+            : index; // Adjust index for removed wallet screen
+      });
+    }
   }
 
   @override
@@ -63,12 +75,8 @@ class _PersistentNavigationWrapperState
           ],
         ),
         child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
+          currentIndex: _currentIndex >= 3 ? _currentIndex + 1 : _currentIndex,
+          onTap: _onTabTapped,
           type: BottomNavigationBarType.fixed,
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -89,7 +97,10 @@ class _PersistentNavigationWrapperState
               icon: Icon(Icons.add_box),
               label: 'Create',
             ),
-            // Removed: Wallet tab
+            BottomNavigationBarItem(
+              icon: Icon(Icons.account_balance_wallet),
+              label: 'Wallet',
+            ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person),
               label: 'Profile',
