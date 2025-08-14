@@ -68,6 +68,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
         backgroundColor: Colors.black,
+        appBar: _isCurrentUser ? _buildAppBar() : null,
         body: _isLoading
             ? const Center(
                 child: CircularProgressIndicator(
@@ -75,6 +76,111 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             : _userProfile == null
                 ? _buildErrorState()
                 : _buildProfileContent());
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      title: Text(
+        'My Profile',
+        style: GoogleFonts.inter(
+          fontSize: 20.sp,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+      actions: [
+        // Settings button
+        IconButton(
+          icon: const Icon(Icons.settings_outlined, color: Colors.white),
+          onPressed: _showProfileMenu,
+        ),
+        // Logout button
+        Container(
+          margin: EdgeInsets.only(right: 4.w),
+          child: ElevatedButton.icon(
+            onPressed: _confirmSignOut,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.withAlpha(26),
+              foregroundColor: Colors.red,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: Colors.red.withAlpha(77)),
+              ),
+              padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 1.h),
+            ),
+            icon: Icon(Icons.logout, size: 16.sp),
+            label: Text(
+              'Logout',
+              style: GoogleFonts.inter(
+                fontSize: 12.sp,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmSignOut() async {
+    final shouldSignOut = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.black87,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Text(
+          'Sign Out',
+          style: GoogleFonts.inter(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 18.sp,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to sign out of your account?',
+          style: GoogleFonts.inter(
+            color: Colors.white70,
+            fontSize: 14.sp,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(
+                color: Colors.white54,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(
+              'Sign Out',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w600,
+                fontSize: 14.sp,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldSignOut == true) {
+      await _signOut();
+    }
   }
 
   Widget _buildErrorState() {
@@ -318,14 +424,54 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   Future<void> _signOut() async {
     try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: Container(
+            padding: EdgeInsets.all(6.w),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+                SizedBox(height: 2.h),
+                Text(
+                  'Signing out...',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 14.sp,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
       await AuthService.signOut();
+
       if (mounted) {
+        Navigator.pop(context); // Close loading dialog
         Navigator.pushNamedAndRemoveUntil(
             context, AppRoutes.login, (route) => false);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to sign out: $e')));
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog if still showing
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to sign out: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

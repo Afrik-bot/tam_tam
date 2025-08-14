@@ -100,8 +100,7 @@ class TamTamApp extends StatelessWidget {
       },
     );
   }
-}
-final ValueNotifier<String> currentPageNotifier = ValueNotifier<String>('');
+}final ValueNotifier<String> currentPageNotifier = ValueNotifier<String>('');
 
 class MyRouteObserver1 extends RouteObserver<PageRoute<dynamic>> {
   void _updateCurrentPage(Route<dynamic>? route) {

@@ -149,9 +149,8 @@ class _SplashScreenState extends State<SplashScreen>
     if (mounted) {
       if (isFirstTime) {
         Navigator.pushReplacementNamed(context, AppRoutes.onboarding);
-      } else if (isAuthenticated) {
-        Navigator.pushReplacementNamed(context, AppRoutes.mainVideoFeed);
       } else {
+        // Always redirect to login screen as landing page
         Navigator.pushReplacementNamed(context, AppRoutes.login);
       }
     }

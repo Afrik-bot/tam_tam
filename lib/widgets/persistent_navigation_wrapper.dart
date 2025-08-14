@@ -84,24 +84,27 @@ class _PersistentNavigationWrapperState
           unselectedItemColor: const Color(0xFF666666),
           selectedFontSize: 12.sp,
           unselectedFontSize: 10.sp,
-          items: const [
-            BottomNavigationBarItem(
+          items: [
+            const BottomNavigationBarItem(
               icon: Icon(Icons.home),
               label: 'Home',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.live_tv),
+              icon: Icon(
+                Icons.live_tv,
+                color: Colors.red, // Make Live icon red
+              ),
               label: 'Live',
             ),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               icon: Icon(Icons.add_box),
               label: 'Create',
             ),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               icon: Icon(Icons.account_balance_wallet),
               label: 'Wallet',
             ),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               icon: Icon(Icons.person),
               label: 'Profile',
             ),
