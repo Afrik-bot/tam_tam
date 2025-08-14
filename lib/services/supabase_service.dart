@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 
 class SupabaseService {
   static SupabaseService? _instance;
@@ -12,41 +15,119 @@ class SupabaseService {
   late final SupabaseClient _client;
   SupabaseClient get client => _client;
 
-  Future<void> initialize() async {
-    // Load environment configuration
-    String configContent;
+  bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
 
-    if (kIsWeb) {
-      // For web, you might need to handle this differently
-      configContent =
-          '{"SUPABASE_URL": "your_supabase_url", "SUPABASE_ANON_KEY": "your_supabase_anon_key"}';
-    } else {
-      try {
-        final file = File('env.json');
-        configContent = await file.readAsString();
-      } catch (e) {
-        // Fallback configuration
-        configContent =
-            '{"SUPABASE_URL": "your_supabase_url", "SUPABASE_ANON_KEY": "your_supabase_anon_key"}';
-      }
+  Future<void> initialize() async {
+    if (_isInitialized) {
+      debugPrint('Supabase already initialized');
+      return;
     }
 
-    final config = json.decode(configContent) as Map<String, dynamic>;
-    final supabaseUrl = config['SUPABASE_URL'] as String;
-    final supabaseAnonKey = config['SUPABASE_ANON_KEY'] as String;
+    try {
+      // Load environment configuration
+      String configContent;
 
-    await Supabase.initialize(
-      url: supabaseUrl,
-      anonKey: supabaseAnonKey,
-    );
+      if (kIsWeb) {
+        // For web, load from assets
+        try {
+          configContent = await rootBundle.loadString('env.json');
+        } catch (e) {
+          debugPrint('Failed to load env.json from assets: $e');
+          // Try alternative method for web
+          configContent = await _loadEnvForWeb();
+        }
+      } else {
+        try {
+          final file = File('env.json');
+          configContent = await file.readAsString();
+        } catch (e) {
+          debugPrint('Failed to load env.json from file system: $e');
+          throw Exception(
+              'env.json file not found. Please create env.json with your Supabase credentials.');
+        }
+      }
 
-    _client = Supabase.instance.client;
+      final config = json.decode(configContent) as Map<String, dynamic>;
+      final supabaseUrl = config['SUPABASE_URL'] as String?;
+      final supabaseAnonKey = config['SUPABASE_ANON_KEY'] as String?;
+
+      // Validate that we have real values
+      if (supabaseUrl == null ||
+          supabaseUrl.isEmpty ||
+          supabaseAnonKey == null ||
+          supabaseAnonKey.isEmpty ||
+          supabaseUrl.contains('your_supabase_url') ||
+          supabaseAnonKey.contains('your_supabase_anon_key')) {
+        throw Exception(
+            'Please configure your Supabase URL and anon key in env.json');
+      }
+
+      await Supabase.initialize(
+        url: supabaseUrl,
+        anonKey: supabaseAnonKey,
+        debug: kDebugMode,
+      );
+
+      _client = Supabase.instance.client;
+      _isInitialized = true;
+
+      debugPrint('Supabase connection established successfully');
+      debugPrint(
+          'Connected to: ${supabaseUrl.replaceAll(RegExp(r'://.*@'), '://***@')}');
+
+      // Test the connection by checking auth status
+      final user = _client.auth.currentUser;
+      debugPrint('Current auth user: ${user?.email ?? 'Not authenticated'}');
+    } catch (e) {
+      debugPrint('Supabase initialization error: $e');
+      _isInitialized = false;
+      rethrow;
+    }
   }
 
-  // Fixed authentication methods - removed manual profile creation
+  Future<String> _loadEnvForWeb() async {
+    // Alternative method for web - you might need to adjust this based on your deployment
+    try {
+      // Try to load from root directory
+      final response = await rootBundle.loadString('env.json');
+      return response;
+    } catch (e) {
+      debugPrint('Could not load env.json for web: $e');
+      throw Exception(
+          'Please ensure env.json is accessible for web deployment');
+    }
+  }
+
+  // Connection health check
+  Future<bool> testConnection() async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    try {
+      // Simple query to test database connection
+      final response =
+          await _client.from('user_profiles').select('count').limit(1);
+
+      debugPrint('Database connection test successful');
+      return true;
+    } catch (e) {
+      debugPrint('Database connection test failed: $e');
+      return false;
+    }
+  }
+
+  // Enhanced authentication methods with better error handling and logging
   Future<AuthResponse> signUp(String email, String password,
       {String? username, String? fullName}) async {
+    if (!_isInitialized) {
+      throw Exception('Supabase not initialized. Call initialize() first.');
+    }
+
     try {
+      debugPrint('Attempting signup for email: $email');
+
       final response = await _client.auth.signUp(
         email: email,
         password: password,
@@ -57,35 +138,63 @@ class SupabaseService {
         },
       );
 
-      // No manual profile creation - the database trigger handles this automatically
+      if (response.user != null) {
+        debugPrint('Signup successful for user: ${response.user!.id}');
+
+        if (response.session == null) {
+          debugPrint(
+              'Email confirmation required for user: ${response.user!.email}');
+        } else {
+          debugPrint('User signed in successfully: ${response.user!.email}');
+        }
+      }
+
       return response;
     } catch (error) {
+      debugPrint('Signup failed: $error');
       throw Exception('Sign-up failed: $error');
     }
   }
 
   Future<AuthResponse> signIn(String email, String password) async {
+    if (!_isInitialized) {
+      throw Exception('Supabase not initialized. Call initialize() first.');
+    }
+
     try {
+      debugPrint('Attempting signin for email: $email');
+
       final response = await _client.auth.signInWithPassword(
         email: email,
         password: password,
       );
+
+      if (response.user != null) {
+        debugPrint('Signin successful for user: ${response.user!.id}');
+      }
+
       return response;
     } catch (error) {
+      debugPrint('Signin failed: $error');
       throw Exception('Sign-in failed: $error');
     }
   }
 
   Future<void> signOut() async {
+    if (!_isInitialized) return;
+
     try {
       await _client.auth.signOut();
+      debugPrint('User signed out successfully');
     } catch (error) {
+      debugPrint('Signout failed: $error');
       throw Exception('Sign-out failed: $error');
     }
   }
 
-  User? get currentUser => _client.auth.currentUser;
-  Session? get currentSession => _client.auth.currentSession;
+  User? get currentUser => _isInitialized ? _client.auth.currentUser : null;
+  Session? get currentSession =>
+      _isInitialized ? _client.auth.currentSession : null;
 
   Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
 

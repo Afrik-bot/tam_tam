@@ -77,7 +77,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     }
 
     try {
-      // Create new controller
+      // Create new controller with better error handling
       if (videoUrl.startsWith('http')) {
         _controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
       } else {
@@ -92,8 +92,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       // Add listener for buffering state
       _controller?.addListener(_videoListener);
 
-      // Initialize the controller
-      await _controller?.initialize();
+      // Initialize the controller with timeout
+      await _controller?.initialize().timeout(
+        Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception('Video initialization timeout');
+        },
+      );
 
       if (mounted) {
         setState(() {
@@ -357,31 +362,58 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 ? _buildLoadingWidget()
                 : Stack(
                     children: [
-                      // Video player
+                      // Video player with fixed aspect ratio handling
                       Positioned.fill(
-                        child: AspectRatio(
-                          aspectRatio: _controller!.value.aspectRatio,
-                          child: VideoPlayer(_controller!),
+                        child: Center(
+                          child: _controller!.value.isInitialized
+                              ? AspectRatio(
+                                  aspectRatio:
+                                      _controller!.value.aspectRatio > 0
+                                          ? _controller!.value.aspectRatio
+                                          : 16 / 9, // Fallback aspect ratio
+                                  child: VideoPlayer(_controller!),
+                                )
+                              : Container(
+                                  color: Colors.black,
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      color: Color(0xFFFF6B35),
+                                    ),
+                                  ),
+                                ),
                         ),
                       ),
                       // Controls overlay
                       Positioned.fill(
                         child: _buildVideoControls(),
                       ),
-                      // Progress indicator at bottom
-                      if (_isInitialized && widget.isActive)
+                      // Simple progress bar at bottom (without VideoProgressIndicator)
+                      if (_isInitialized &&
+                          widget.isActive &&
+                          _controller != null)
                         Positioned(
                           bottom: 0,
                           left: 0,
                           right: 0,
-                          child: VideoProgressIndicator(
-                            _controller!,
-                            allowScrubbing: true,
-                            padding: EdgeInsets.symmetric(horizontal: 2.w),
-                            colors: VideoProgressColors(
-                              playedColor: Color(0xFFFF6B35),
-                              bufferedColor: Colors.white30,
-                              backgroundColor: Colors.white10,
+                          child: Container(
+                            height: 2,
+                            margin: EdgeInsets.symmetric(horizontal: 2.w),
+                            child: ValueListenableBuilder<VideoPlayerValue>(
+                              valueListenable: _controller!,
+                              builder: (context, value, child) {
+                                if (!value.isInitialized) {
+                                  return Container(color: Colors.white10);
+                                }
+                                final progress = value.position.inMilliseconds /
+                                    value.duration.inMilliseconds;
+                                return LinearProgressIndicator(
+                                  value: progress.isNaN ? 0.0 : progress,
+                                  backgroundColor: Colors.white10,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Color(0xFFFF6B35),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ),

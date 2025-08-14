@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:sizer/sizer.dart';
 
 import '../../core/app_export.dart';
-import '../../widgets/custom_icon_widget.dart';
 import './widgets/navigation_buttons_widget.dart';
 import './widgets/onboarding_page_widget.dart';
 import './widgets/progress_indicator_widget.dart';
@@ -19,7 +18,9 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     with TickerProviderStateMixin {
   late PageController _pageController;
   late AnimationController _animationController;
+  late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
   int _currentPage = 0;
   final int _totalPages = 4;
 
@@ -66,24 +67,45 @@ class _OnboardingFlowState extends State<OnboardingFlow>
   void initState() {
     super.initState();
     _pageController = PageController();
+
+    // Main animation controller for page transitions
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
+
+    // Fade controller for smoother transitions
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+
     _fadeAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
     ).animate(CurvedAnimation(
-      parent: _animationController,
+      parent: _fadeController,
       curve: Curves.easeInOut,
     ));
+
+    _scaleAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.elasticOut,
+    ));
+
+    // Start animations
     _animationController.forward();
+    _fadeController.forward();
   }
 
   @override
   void dispose() {
     _pageController.dispose();
     _animationController.dispose();
+    _fadeController.dispose();
     super.dispose();
   }
 
@@ -94,15 +116,34 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         curve: Curves.easeInOut,
       );
       _triggerHapticFeedback();
+      _animatePageTransition();
     }
   }
 
+  void _previousPage() {
+    if (_currentPage > 0) {
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      _triggerHapticFeedback();
+      _animatePageTransition();
+    }
+  }
+
+  void _animatePageTransition() {
+    _animationController.reset();
+    _animationController.forward();
+  }
+
   void _skipOnboarding() {
-    Navigator.pushReplacementNamed(context, '/registration-screen');
+    _triggerHapticFeedback();
+    Navigator.pushReplacementNamed(context, AppRoutes.registration);
   }
 
   void _getStarted() {
-    Navigator.pushReplacementNamed(context, '/registration-screen');
+    _triggerHapticFeedback();
+    Navigator.pushReplacementNamed(context, AppRoutes.registration);
   }
 
   void _triggerHapticFeedback() {
@@ -114,6 +155,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
       _currentPage = page;
     });
     _triggerHapticFeedback();
+    _animatePageTransition();
   }
 
   @override
@@ -122,98 +164,117 @@ class _OnboardingFlowState extends State<OnboardingFlow>
       body: GestureDetector(
         onHorizontalDragEnd: (details) {
           if (details.primaryVelocity != null) {
-            if (details.primaryVelocity! < 0 &&
+            if (details.primaryVelocity! < -500 &&
                 _currentPage < _totalPages - 1) {
               _nextPage();
-            } else if (details.primaryVelocity! > 0 && _currentPage > 0) {
-              _pageController.previousPage(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-              );
-              _triggerHapticFeedback();
+            } else if (details.primaryVelocity! > 500 && _currentPage > 0) {
+              _previousPage();
             }
           }
         },
-        child: Stack(
-          children: [
-            // Page view with onboarding screens
-            PageView.builder(
-              controller: _pageController,
-              onPageChanged: _onPageChanged,
-              itemCount: _totalPages,
-              itemBuilder: (context, index) {
-                final data = _onboardingData[index];
-                return FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: OnboardingPageWidget(
-                    title: data["title"] as String,
-                    subtitle: data["subtitle"] as String,
-                    imageUrl: data["imageUrl"] as String,
-                    backgroundColor: data["backgroundColor"] as Color,
-                    textColor: data["textColor"] as Color,
+        child: AnimatedBuilder(
+          animation: _fadeAnimation,
+          builder: (context, child) {
+            return Opacity(
+              opacity: _fadeAnimation.value,
+              child: Stack(
+                children: [
+                  // Page view with onboarding screens
+                  PageView.builder(
+                    controller: _pageController,
+                    onPageChanged: _onPageChanged,
+                    itemCount: _totalPages,
+                    itemBuilder: (context, index) {
+                      final data = _onboardingData[index];
+                      return ScaleTransition(
+                        scale: _scaleAnimation,
+                        child: OnboardingPageWidget(
+                          title: data["title"] as String,
+                          subtitle: data["subtitle"] as String,
+                          imageUrl: data["imageUrl"] as String,
+                          backgroundColor: data["backgroundColor"] as Color,
+                          textColor: data["textColor"] as Color,
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
 
-            // Close button
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 2.h,
-              right: 6.w,
-              child: GestureDetector(
-                onTap: _skipOnboarding,
-                child: Container(
-                  width: 10.w,
-                  height: 10.w,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(20),
+                  // Close button with improved visibility
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 2.h,
+                    right: 6.w,
+                    child: GestureDetector(
+                      onTap: _skipOnboarding,
+                      child: Container(
+                        width: 10.w,
+                        height: 10.w,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withAlpha(77),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withAlpha(51),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Center(
+                          child: CustomIconWidget(
+                            iconName: 'close',
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  child: CustomIconWidget(
-                    iconName: 'close',
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-            ),
 
-            // Progress indicator
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 1.h,
-              left: 0,
-              right: 0,
-              child: ProgressIndicatorWidget(
-                currentPage: _currentPage,
-                totalPages: _totalPages,
-              ),
-            ),
-
-            // Navigation buttons
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.1),
-                    ],
+                  // Progress indicator with animation
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 1.h,
+                    left: 0,
+                    right: 0,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: ProgressIndicatorWidget(
+                        key: ValueKey(_currentPage),
+                        currentPage: _currentPage,
+                        totalPages: _totalPages,
+                      ),
+                    ),
                   ),
-                ),
-                child: NavigationButtonsWidget(
-                  isLastPage: _currentPage == _totalPages - 1,
-                  onNext: _nextPage,
-                  onSkip: _skipOnboarding,
-                  onGetStarted: _getStarted,
-                ),
+
+                  // Navigation buttons with improved animations
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withAlpha(26),
+                          ],
+                        ),
+                      ),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: NavigationButtonsWidget(
+                          key: ValueKey(
+                              'nav_${_currentPage}_${_currentPage == _totalPages - 1}'),
+                          isLastPage: _currentPage == _totalPages - 1,
+                          onNext: _nextPage,
+                          onSkip: _skipOnboarding,
+                          onGetStarted: _getStarted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

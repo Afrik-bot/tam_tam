@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
 
-import '../../../core/app_export.dart';
+import '../../core/app_export.dart';
+import '../../services/auth_service.dart';
+import '../../services/supabase_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
@@ -96,7 +99,8 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _performInitializationSteps() async {
     final steps = [
-      {"text": "Checking authentication...", "duration": 400},
+      {"text": "Connecting to Supabase...", "duration": 400},
+      {"text": "Checking authentication...", "duration": 300},
       {"text": "Loading user preferences...", "duration": 300},
       {"text": "Fetching config data...", "duration": 500},
       {"text": "Preparing video content...", "duration": 600},
@@ -110,6 +114,17 @@ class _SplashScreenState extends State<SplashScreen>
           _loadingProgress = (i + 1) / steps.length;
         });
       }
+
+      // Ensure Supabase is initialized during the first step
+      if (i == 0 && !SupabaseService.instance.isInitialized) {
+        try {
+          await SupabaseService.instance.initialize();
+        } catch (e) {
+          // Continue even if Supabase fails - for development mode
+          print('Supabase initialization failed during splash: $e');
+        }
+      }
+
       await Future.delayed(Duration(milliseconds: steps[i]["duration"] as int));
     }
   }
@@ -117,8 +132,15 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _navigateToNextScreen() async {
     if (!mounted) return;
 
-    // Simulate authentication check
-    final isAuthenticated = await _checkAuthenticationStatus();
+    // Check authentication status and first time user
+    bool isAuthenticated = false;
+    try {
+      isAuthenticated = AuthService.instance.isAuthenticated;
+    } catch (e) {
+      // Default to false if there's an error
+      isAuthenticated = false;
+    }
+
     final isFirstTime = await _checkFirstTimeUser();
 
     // Restore system UI before navigation
@@ -126,40 +148,43 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (mounted) {
       if (isFirstTime) {
-        Navigator.pushReplacementNamed(context, '/onboarding-flow');
+        Navigator.pushReplacementNamed(context, AppRoutes.onboarding);
       } else if (isAuthenticated) {
-        Navigator.pushReplacementNamed(context, '/main-video-feed');
+        Navigator.pushReplacementNamed(context, AppRoutes.mainVideoFeed);
       } else {
-        Navigator.pushReplacementNamed(context, '/login-screen');
+        Navigator.pushReplacementNamed(context, AppRoutes.login);
       }
     }
   }
 
-  Future<bool> _checkAuthenticationStatus() async {
-    // Simulate authentication check
-    await Future.delayed(const Duration(milliseconds: 100));
-    // Mock logic - in real app, check stored tokens/credentials
-    return false; // Return false to show login flow
-  }
-
   Future<bool> _checkFirstTimeUser() async {
-    // Simulate first-time user check
-    await Future.delayed(const Duration(milliseconds: 50));
-    // Mock logic - in real app, check shared preferences
-    return true; // Return true to show onboarding
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isFirstTime = prefs.getBool('first_time_user') ?? true;
+
+      if (isFirstTime) {
+        await prefs.setBool('first_time_user', false);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      // If there's an error, assume first time user
+      return true;
+    }
   }
 
   void _handleInitializationError() {
     if (mounted) {
       setState(() {
         _isInitializing = false;
-        _loadingText = "Something went wrong";
+        _loadingText = "Connection error - continuing in offline mode";
       });
 
-      // Show retry option after 3 seconds
-      Future.delayed(const Duration(seconds: 3), () {
+      // Show retry option after 2 seconds, or continue to main app
+      Future.delayed(const Duration(seconds: 2), () {
         if (mounted) {
-          _showRetryDialog();
+          // Navigate to login screen even with errors
+          Navigator.pushReplacementNamed(context, AppRoutes.login);
         }
       });
     }
@@ -191,6 +216,13 @@ class _SplashScreenState extends State<SplashScreen>
                 _initializeApp();
               },
               child: const Text('Retry'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.pushReplacementNamed(context, AppRoutes.login);
+              },
+              child: const Text('Continue Offline'),
             ),
           ],
         );
@@ -257,8 +289,8 @@ class _SplashScreenState extends State<SplashScreen>
                     SizedBox(height: 3.h),
                     _buildLoadingText(),
                   ] else ...[
-                    CustomIconWidget(
-                      iconName: 'error_outline',
+                    Icon(
+                      Icons.wifi_off_outlined,
                       color: Colors.white.withValues(alpha: 0.8),
                       size: 48,
                     ),
@@ -268,6 +300,7 @@ class _SplashScreenState extends State<SplashScreen>
                       style: AppTheme.lightTheme.textTheme.bodyLarge?.copyWith(
                         color: Colors.white.withValues(alpha: 0.9),
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ],
 
@@ -387,7 +420,7 @@ class _SplashScreenState extends State<SplashScreen>
         ),
         SizedBox(height: 1.h),
         Text(
-          'v1.0.0',
+          'v1.0.0 - Powered by Supabase',
           style: AppTheme.lightTheme.textTheme.bodySmall?.copyWith(
             color: Colors.white.withValues(alpha: 0.6),
             fontSize: 10.sp,

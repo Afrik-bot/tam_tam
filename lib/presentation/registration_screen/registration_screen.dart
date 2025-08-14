@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
-import 'dart:async';
 
 import '../../core/app_export.dart';
 import '../../services/auth_service.dart';
+import '../../services/supabase_service.dart';
 import './widgets/registration_form.dart';
 import './widgets/social_signup_buttons.dart';
 
@@ -37,6 +39,10 @@ class _RegistrationScreenState extends State<RegistrationScreen>
   bool _isTermsAccepted = false;
   bool _isLoading = false;
 
+  // Add connection status tracking
+  bool _isSupabaseConnected = false;
+  String? _connectionError;
+
   // Debouncing
   Timer? _usernameDebounceTimer;
   Timer? _emailDebounceTimer;
@@ -52,6 +58,30 @@ class _RegistrationScreenState extends State<RegistrationScreen>
     super.initState();
     _initializeAnimations();
     _startAnimations();
+    _checkSupabaseConnection();
+  }
+
+  Future<void> _checkSupabaseConnection() async {
+    try {
+      final isConnected = await SupabaseService.instance.testConnection();
+      if (mounted) {
+        setState(() {
+          _isSupabaseConnected = isConnected;
+          _connectionError = isConnected ? null : 'Database connection failed';
+        });
+      }
+
+      if (isConnected) {
+        _showSuccessSnackBar('Connected to Supabase successfully!');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSupabaseConnected = false;
+          _connectionError = 'Connection error: ${e.toString()}';
+        });
+      }
+    }
   }
 
   void _initializeAnimations() {
@@ -344,6 +374,14 @@ class _RegistrationScreenState extends State<RegistrationScreen>
   }
 
   Future<void> _handleRegistration() async {
+    // Check Supabase connection first
+    if (!_isSupabaseConnected) {
+      _showErrorSnackBar(
+          'Database connection is required for registration. Please check your connection.');
+      await _checkSupabaseConnection();
+      return;
+    }
+
     // Final validation before submission
     if (!_isFormValid()) {
       _showValidationErrors();
@@ -387,15 +425,37 @@ class _RegistrationScreenState extends State<RegistrationScreen>
         });
 
         String errorMessage = e.toString().replaceFirst('Exception: ', '');
-        _showErrorSnackBar(errorMessage);
+
+        // Handle specific Supabase errors
+        if (errorMessage.contains('not initialized')) {
+          _showErrorSnackBar(
+              'Connection error. Please check your internet connection and try again.');
+          await _checkSupabaseConnection();
+        } else {
+          _showErrorSnackBar(errorMessage);
+        }
       }
+    }
+  }
+
+  void _showSuccessSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
   }
 
   void _showValidationErrors() {
     String errorMessage = '';
 
-    if (_usernameController.text.trim().isEmpty) {
+    if (!_isSupabaseConnected) {
+      errorMessage = 'Database connection required';
+    } else if (_usernameController.text.trim().isEmpty) {
       errorMessage = 'Please enter a username';
     } else if (!_isUsernameAvailable) {
       errorMessage = 'Please choose an available username';
@@ -570,12 +630,58 @@ class _RegistrationScreenState extends State<RegistrationScreen>
       body: SafeArea(
         child: Stack(
           children: [
+            // Add connection status indicator
+            if (_connectionError != null)
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(vertical: 1.h, horizontal: 4.w),
+                color:
+                    _isSupabaseConnected ? Colors.green : Colors.red.shade100,
+                child: Row(
+                  children: [
+                    Icon(
+                      _isSupabaseConnected
+                          ? Icons.check_circle
+                          : Icons.error_outline,
+                      color: _isSupabaseConnected ? Colors.white : Colors.red,
+                      size: 20,
+                    ),
+                    SizedBox(width: 2.w),
+                    Expanded(
+                      child: Text(
+                        _isSupabaseConnected
+                            ? 'Database connected successfully'
+                            : _connectionError!,
+                        style: TextStyle(
+                          color:
+                              _isSupabaseConnected ? Colors.white : Colors.red,
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (!_isSupabaseConnected)
+                      TextButton(
+                        onPressed: _checkSupabaseConnection,
+                        child: Text(
+                          'Retry',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
             SingleChildScrollView(
               padding: EdgeInsets.symmetric(horizontal: 6.w),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  SizedBox(height: 4.h),
+                  SizedBox(height: _connectionError != null ? 1.h : 4.h),
                   _buildLogo(),
                   SizedBox(height: 4.h),
                   _buildFormSection(),
@@ -592,6 +698,45 @@ class _RegistrationScreenState extends State<RegistrationScreen>
             if (_isLoading) _buildLoadingOverlay(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCreateAccountButton() {
+    final bool isEnabled =
+        _isFormValid() && !_isLoading && _isSupabaseConnected;
+
+    return SizedBox(
+      width: double.infinity,
+      height: 6.h,
+      child: ElevatedButton(
+        onPressed: isEnabled ? _handleRegistration : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isEnabled
+              ? AppTheme.lightTheme.colorScheme.primary
+              : AppTheme.lightTheme.colorScheme.outline.withAlpha(77),
+          foregroundColor: Colors.white,
+          elevation: isEnabled ? 4 : 0,
+          shadowColor: AppTheme.lightTheme.colorScheme.primary.withAlpha(77),
+        ),
+        child: _isLoading
+            ? SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : Text(
+                _isSupabaseConnected
+                    ? 'Create Account'
+                    : 'Connecting to Database...',
+                style: AppTheme.lightTheme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
       ),
     );
   }
@@ -750,40 +895,6 @@ class _RegistrationScreenState extends State<RegistrationScreen>
             }).toList(),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCreateAccountButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 6.h,
-      child: ElevatedButton(
-        onPressed: _isFormValid() && !_isLoading ? _handleRegistration : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _isFormValid()
-              ? AppTheme.lightTheme.colorScheme.primary
-              : AppTheme.lightTheme.colorScheme.outline.withAlpha(77),
-          foregroundColor: Colors.white,
-          elevation: _isFormValid() ? 4 : 0,
-          shadowColor: AppTheme.lightTheme.colorScheme.primary.withAlpha(77),
-        ),
-        child: _isLoading
-            ? SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : Text(
-                'Create Account',
-                style: AppTheme.lightTheme.textTheme.titleMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
       ),
     );
   }

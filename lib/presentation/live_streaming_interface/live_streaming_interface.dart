@@ -8,6 +8,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:sizer/sizer.dart';
 
 import '../../core/app_export.dart';
+import '../../services/content_service.dart';
+import '../../services/supabase_service.dart';
 import './widgets/battle_mode_widget.dart';
 import './widgets/comment_input_widget.dart';
 import './widgets/comment_stream_widget.dart';
@@ -47,6 +49,7 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
   final ScrollController _commentScrollController = ScrollController();
   List<Map<String, dynamic>> _comments = [];
   Timer? _commentTimer;
+  StreamSubscription? _commentSubscription;
 
   // Shopping
   bool _showShoppingOverlay = false;
@@ -55,48 +58,87 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
   // Battle mode
   Map<String, dynamic> _battleData = {};
 
+  // Current live stream content
+  Map<String, dynamic>? _currentLiveContent;
+
   @override
   void initState() {
     super.initState();
+    _initializeServices();
     _initializeMockData();
     _initializeCamera();
     _startStreamSimulation();
-    _startCommentSimulation();
+    _loadLiveStreamData();
+  }
+
+  void _initializeServices() {
+    // Check if Supabase is properly initialized
+    if (SupabaseService.instance.isInitialized) {
+      debugPrint('Supabase service is ready for live streaming');
+    } else {
+      debugPrint('Using fallback mode for live streaming preview');
+    }
+  }
+
+  Future<void> _loadLiveStreamData() async {
+    try {
+      // Load current live stream content
+      final liveContent =
+          await ContentService.instance.getLiveStreamContent(limit: 1);
+      if (liveContent.isNotEmpty) {
+        setState(() {
+          _currentLiveContent = liveContent.first;
+          _viewerCount = _currentLiveContent!['view_count'] ?? 1247;
+        });
+      }
+
+      // Load comments for the current stream
+      _loadComments();
+
+      // Load battle data
+      final battles = await ContentService.instance.getActiveBattles(limit: 1);
+      if (battles.isNotEmpty) {
+        setState(() {
+          _battleData = battles.first;
+        });
+      }
+    } catch (error) {
+      debugPrint('Error loading live stream data: $error');
+      // Continue with fallback data - app won't crash
+    }
+  }
+
+  Future<void> _loadComments() async {
+    try {
+      final comments = await ContentService.instance.getLiveStreamComments(
+        _currentLiveContent?['id'],
+        limit: 20,
+      );
+
+      setState(() {
+        _comments = comments;
+      });
+
+      // Subscribe to real-time comments if we have content
+      if (_currentLiveContent != null) {
+        _commentSubscription?.cancel();
+        _commentSubscription = ContentService.instance
+            .subscribeToLiveComments(_currentLiveContent!['id'])
+            .listen((comments) {
+          if (mounted) {
+            setState(() {
+              _comments = comments;
+            });
+            _scrollToBottom();
+          }
+        });
+      }
+    } catch (error) {
+      debugPrint('Error loading comments: $error');
+    }
   }
 
   void _initializeMockData() {
-    _comments = [
-      {
-        "id": 1,
-        "username": "Sarah_K",
-        "avatar":
-            "https://images.pexels.com/photos/415829/pexels-photo-415829.jpeg?auto=compress&cs=tinysrgb&w=150",
-        "message": "Amazing stream! Love the energy! 🔥",
-        "type": "comment",
-        "emoji": "🔥",
-        "timestamp": DateTime.now().subtract(Duration(minutes: 2)),
-      },
-      {
-        "id": 2,
-        "username": "Mike_Crypto",
-        "avatar":
-            "https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=150",
-        "message": "Just sent you 50 Tam Tokens! Keep it up!",
-        "type": "tip",
-        "amount": "\$25.00",
-        "timestamp": DateTime.now().subtract(Duration(minutes: 1)),
-      },
-      {
-        "id": 3,
-        "username": "Luna_Star",
-        "avatar":
-            "https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150",
-        "message": "Can you show that product again?",
-        "type": "comment",
-        "timestamp": DateTime.now().subtract(Duration(seconds: 30)),
-      },
-    ];
-
     _products = [
       {
         "id": 1,
@@ -128,23 +170,6 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
         "inStock": true,
       },
     ];
-
-    _battleData = {
-      "creator1": {
-        "name": "Alex_Creator",
-        "avatar":
-            "https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?auto=compress&cs=tinysrgb&w=150",
-        "score": 75.0,
-      },
-      "creator2": {
-        "name": "Jordan_Live",
-        "avatar":
-            "https://images.pexels.com/photos/1674752/pexels-photo-1674752.jpeg?auto=compress&cs=tinysrgb&w=150",
-        "score": 68.0,
-      },
-      "tipPool": 450.75,
-      "timeRemaining": "02:45",
-    };
   }
 
   Future<void> _initializeCamera() async {
@@ -181,6 +206,7 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
       }
     } catch (e) {
       _showToast('Failed to initialize camera');
+      debugPrint('Camera initialization error: $e');
     }
   }
 
@@ -203,36 +229,6 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
 
     setState(() {
       _isStreaming = true;
-    });
-  }
-
-  void _startCommentSimulation() {
-    _commentTimer = Timer.periodic(Duration(seconds: 8), (timer) {
-      if (mounted && _comments.length < 20) {
-        final randomComments = [
-          "This is so cool! 😍",
-          "Love your content!",
-          "Can you do a tutorial?",
-          "Amazing quality!",
-          "Keep it up! 💪",
-        ];
-
-        final newComment = {
-          "id": _comments.length + 1,
-          "username": "User${Random().nextInt(1000)}",
-          "avatar":
-              "https://images.pexels.com/photos/${1000000 + Random().nextInt(1000000)}/pexels-photo-${1000000 + Random().nextInt(1000000)}.jpeg?auto=compress&cs=tinysrgb&w=150",
-          "message": randomComments[Random().nextInt(randomComments.length)],
-          "type": "comment",
-          "timestamp": DateTime.now(),
-        };
-
-        setState(() {
-          _comments.add(newComment);
-        });
-
-        _scrollToBottom();
-      }
     });
   }
 
@@ -314,28 +310,45 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
   void _endStream() {
     _streamTimer?.cancel();
     _commentTimer?.cancel();
+    _commentSubscription?.cancel();
     Navigator.pushReplacementNamed(context, '/creator-analytics-dashboard');
   }
 
-  void _onSendComment() {
+  Future<void> _onSendComment() async {
     if (_commentController.text.trim().isEmpty) return;
 
-    final newComment = {
-      "id": _comments.length + 1,
-      "username": "You",
-      "avatar":
-          "https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150",
-      "message": _commentController.text.trim(),
-      "type": "comment",
-      "timestamp": DateTime.now(),
-    };
-
-    setState(() {
-      _comments.add(newComment);
-    });
-
+    final message = _commentController.text.trim();
     _commentController.clear();
-    _scrollToBottom();
+
+    try {
+      // Try to add comment to Supabase
+      await ContentService.instance.addLiveStreamComment(
+        _currentLiveContent?['id'],
+        message,
+      );
+
+      // Add optimistic update for better UX
+      final newComment = {
+        "id": DateTime.now().millisecondsSinceEpoch.toString(),
+        "username": "You",
+        "full_name": "You",
+        "avatar":
+            "https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150",
+        "message": message,
+        "type": "comment",
+        "verified": false,
+        "timestamp": DateTime.now(),
+      };
+
+      setState(() {
+        _comments.add(newComment);
+      });
+
+      _scrollToBottom();
+    } catch (error) {
+      debugPrint('Error sending comment: $error');
+      _showToast('Failed to send comment');
+    }
   }
 
   void _onGiftTap() {
@@ -399,13 +412,15 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
 
   void _sendGift(String amount) {
     final tipComment = {
-      "id": _comments.length + 1,
+      "id": DateTime.now().millisecondsSinceEpoch.toString(),
       "username": "You",
+      "full_name": "You",
       "avatar":
           "https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=150",
       "message": "Sent a gift!",
       "type": "tip",
       "amount": amount,
+      "verified": false,
       "timestamp": DateTime.now(),
     };
 
@@ -482,6 +497,11 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
     setState(() {
       _showHearts = true;
     });
+
+    // Try to like the current content
+    if (_currentLiveContent != null) {
+      ContentService.instance.toggleContentLike(_currentLiveContent!['id']);
+    }
 
     Future.delayed(Duration(milliseconds: 100), () {
       if (mounted) {
@@ -607,10 +627,13 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
         height: double.infinity,
         child: _isBattleMode
             ? BattleModeWidget(
-                creator1: _battleData['creator1'] as Map<String, dynamic>,
-                creator2: _battleData['creator2'] as Map<String, dynamic>,
-                tipPool: (_battleData['tipPool'] as num).toDouble(),
-                timeRemaining: _battleData['timeRemaining'] as String,
+                creator1: _battleData['creator1'] as Map<String, dynamic>? ??
+                    {"name": "Creator1", "avatar": "", "score": 0.0},
+                creator2: _battleData['creator2'] as Map<String, dynamic>? ??
+                    {"name": "Creator2", "avatar": "", "score": 0.0},
+                tipPool: (_battleData['tipPool'] as num?)?.toDouble() ?? 0.0,
+                timeRemaining:
+                    _battleData['timeRemaining'] as String? ?? "00:00",
               )
             : _buildCameraPreview(),
       ),
@@ -658,6 +681,7 @@ class _LiveStreamingInterfaceState extends State<LiveStreamingInterface>
   void dispose() {
     _streamTimer?.cancel();
     _commentTimer?.cancel();
+    _commentSubscription?.cancel();
     _cameraController?.dispose();
     _commentController.dispose();
     _commentScrollController.dispose();

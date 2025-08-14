@@ -26,11 +26,12 @@ class OnboardingPageWidget extends StatelessWidget {
       height: 100.h,
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
           colors: [
             backgroundColor,
-            backgroundColor.withValues(alpha: 0.8),
+            backgroundColor.withAlpha(204),
+            backgroundColor.withAlpha(153),
           ],
         ),
       ),
@@ -40,56 +41,92 @@ class OnboardingPageWidget extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Main illustration
-              Container(
-                width: 80.w,
-                height: 35.h,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
+              // Main illustration with improved loading and error handling
+              Hero(
+                tag: 'onboarding_image_$imageUrl',
+                child: Container(
+                  width: 80.w,
+                  height: 35.h,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withAlpha(38),
+                        blurRadius: 25,
+                        offset: const Offset(0, 12),
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: CustomImageWidget(
+                      imageUrl: imageUrl,
+                      width: 80.w,
+                      height: 35.h,
+                      fit: BoxFit.cover,
+                      errorWidget: Container(
+                        width: 80.w,
+                        height: 35.h,
+                        decoration: BoxDecoration(
+                          color: backgroundColor.withAlpha(77),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Icon(
+                          Icons.image_outlined,
+                          size: 48,
+                          color: textColor.withAlpha(153),
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: CustomImageWidget(
-                    imageUrl: imageUrl,
-                    width: 80.w,
-                    height: 35.h,
-                    fit: BoxFit.cover,
                   ),
                 ),
               ),
 
               SizedBox(height: 6.h),
 
-              // Title
-              Text(
-                title,
-                textAlign: TextAlign.center,
+              // Title with improved typography
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 300),
                 style: AppTheme.lightTheme.textTheme.headlineMedium?.copyWith(
-                  color: textColor,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 24.sp,
+                      color: textColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 24.sp,
+                      letterSpacing: -0.5,
+                      height: 1.2,
+                    ) ??
+                    TextStyle(
+                      color: textColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 24.sp,
+                    ),
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
                 ),
               ),
 
               SizedBox(height: 2.h),
 
-              // Subtitle
+              // Subtitle with better readability
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4.w),
-                child: Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 300),
                   style: AppTheme.lightTheme.textTheme.bodyLarge?.copyWith(
-                    color: textColor.withValues(alpha: 0.8),
-                    fontSize: 16.sp,
-                    height: 1.5,
+                        color: textColor.withAlpha(217),
+                        fontSize: 16.sp,
+                        height: 1.6,
+                        letterSpacing: 0.2,
+                      ) ??
+                      TextStyle(
+                        color: textColor.withAlpha(217),
+                        fontSize: 16.sp,
+                        height: 1.6,
+                      ),
+                  child: Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),

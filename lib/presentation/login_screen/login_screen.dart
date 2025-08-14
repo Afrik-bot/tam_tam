@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:sizer/sizer.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/app_export.dart';
 import '../../theme/app_theme.dart';
+import '../../services/auth_service.dart';
 import './widgets/app_logo.dart';
 import './widgets/login_form.dart';
 import './widgets/social_login_button.dart';
@@ -20,19 +22,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final AuthService _authService = AuthService();
 
   bool _isLoading = false;
   bool _showEmailError = false;
   bool _showPasswordError = false;
   String? _emailErrorText;
   String? _passwordErrorText;
-
-  // Mock credentials for testing
-  final Map<String, String> _mockCredentials = {
-    'user@tamtam.com': 'password123',
-    'creator@tamtam.com': 'creator456',
-    'admin@tamtam.com': 'admin789',
-  };
 
   @override
   void dispose() {
@@ -50,6 +46,25 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
+  String _getUserFriendlyError(dynamic error) {
+    if (error is AuthException) {
+      switch (error.message) {
+        case 'Invalid login credentials':
+          return 'Invalid email or password. Please check your credentials.';
+        case 'Email not confirmed':
+          return 'Please check your email and click the confirmation link.';
+        case 'Too many requests':
+          return 'Too many login attempts. Please try again later.';
+        default:
+          if (error.message.toLowerCase().contains('user not found')) {
+            return 'Account not found. Please check your email or sign up.';
+          }
+          return 'Login failed. Please try again.';
+      }
+    }
+    return 'Something went wrong. Please try again.';
+  }
+
   Future<void> _handleLogin() async {
     _clearErrors();
 
@@ -61,47 +76,52 @@ class _LoginScreenState extends State<LoginScreen> {
       _isLoading = true;
     });
 
-    // Simulate network delay
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
 
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
-
-    // Check mock credentials
-    if (_mockCredentials.containsKey(email) &&
-        _mockCredentials[email] == password) {
-      // Success - trigger haptic feedback
-      HapticFeedback.lightImpact();
-
-      Fluttertoast.showToast(
-        msg: "Login successful! Welcome to Tam Tam",
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: AppTheme.lightTheme.colorScheme.primary,
-        textColor: AppTheme.lightTheme.colorScheme.onPrimary,
+      final response = await _authService.signIn(
+        email: email,
+        password: password,
       );
 
-      // Navigate to main video feed
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/main-video-feed');
+      if (response.user != null) {
+        // Success - trigger haptic feedback
+        HapticFeedback.lightImpact();
+
+        Fluttertoast.showToast(
+          msg: "Welcome back to Tam Tam!",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: AppTheme.lightTheme.colorScheme.primary,
+          textColor: AppTheme.lightTheme.colorScheme.onPrimary,
+        );
+
+        // Navigate to main video feed
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/main-video-feed');
+        }
       }
-    } else {
-      // Handle different error scenarios
-      if (!_mockCredentials.containsKey(email)) {
+    } catch (e) {
+      final errorMessage = _getUserFriendlyError(e);
+
+      // Set appropriate error state
+      if (errorMessage.toLowerCase().contains('account not found') ||
+          errorMessage.toLowerCase().contains('email')) {
         setState(() {
           _showEmailError = true;
-          _emailErrorText = 'Account not found. Please check your email.';
+          _emailErrorText = errorMessage;
         });
       } else {
         setState(() {
           _showPasswordError = true;
-          _passwordErrorText = 'Incorrect password. Please try again.';
+          _passwordErrorText = errorMessage;
         });
       }
 
       Fluttertoast.showToast(
-        msg: "Invalid credentials. Please try again.",
-        toastLength: Toast.LENGTH_SHORT,
+        msg: errorMessage,
+        toastLength: Toast.LENGTH_LONG,
         gravity: ToastGravity.BOTTOM,
         backgroundColor: AppTheme.lightTheme.colorScheme.error,
         textColor: AppTheme.lightTheme.colorScheme.onError,
@@ -113,27 +133,79 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  void _handleForgotPassword() {
-    Fluttertoast.showToast(
-      msg: "Password reset link sent to your email",
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-    );
+  Future<void> _handleForgotPassword() async {
+    if (_emailController.text.trim().isEmpty) {
+      Fluttertoast.showToast(
+        msg: "Please enter your email address first",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: AppTheme.lightTheme.colorScheme.error,
+        textColor: AppTheme.lightTheme.colorScheme.onError,
+      );
+      return;
+    }
+
+    try {
+      await _authService.resetPassword(email: _emailController.text.trim());
+
+      Fluttertoast.showToast(
+        msg: "Password reset link sent to your email",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: AppTheme.lightTheme.colorScheme.primary,
+        textColor: AppTheme.lightTheme.colorScheme.onPrimary,
+      );
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: "Failed to send reset email. Please try again.",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: AppTheme.lightTheme.colorScheme.error,
+        textColor: AppTheme.lightTheme.colorScheme.onError,
+      );
+    }
   }
 
-  void _handleSocialLogin(String provider) {
-    Fluttertoast.showToast(
-      msg: "Redirecting to $provider login...",
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-    );
+  Future<void> _handleSocialLogin(String provider) async {
+    setState(() {
+      _isLoading = true;
+    });
 
-    // Simulate social login success
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
+    try {
+      bool success = false;
+
+      switch (provider.toLowerCase()) {
+        case 'google':
+          success = await _authService.signInWithGoogle();
+          break;
+        case 'apple':
+          success = await _authService.signInWithApple();
+          break;
+        default:
+          Fluttertoast.showToast(
+            msg: "$provider login coming soon!",
+            toastLength: Toast.LENGTH_SHORT,
+            gravity: ToastGravity.BOTTOM,
+          );
+          return;
+      }
+
+      if (success && mounted) {
         Navigator.pushReplacementNamed(context, '/main-video-feed');
       }
-    });
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: "Social login failed. Please try again.",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: AppTheme.lightTheme.colorScheme.error,
+        textColor: AppTheme.lightTheme.colorScheme.onError,
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   void _navigateToSignUp() {
