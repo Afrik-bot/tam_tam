@@ -584,10 +584,10 @@ class _RegistrationScreenState extends State<RegistrationScreen>
 
       switch (provider) {
         case 'Google':
-          success = await AuthService.signInWithGoogle();
+          success = await AuthService.instance.signInWithGoogle();
           break;
         case 'Apple':
-          success = await AuthService.signInWithApple();
+          success = await AuthService.instance.signInWithApple();
           break;
         case 'Facebook':
           _showErrorSnackBar('Facebook signup coming soon');

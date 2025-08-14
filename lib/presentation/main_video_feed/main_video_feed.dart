@@ -260,7 +260,7 @@ class _MainVideoFeedState extends State<MainVideoFeed>
 
     try {
       final moreVideos = await ContentService.getFeedContent(
-          page: (_videos.length / 10).floor(), limit: 10);
+          limit: 10, page: (_videos.length / 10).floor());
 
       if (moreVideos.isNotEmpty) {
         setState(() {

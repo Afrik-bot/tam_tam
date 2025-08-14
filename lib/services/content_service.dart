@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/comment.dart';
+import '../models/content.dart';
 import './supabase_service.dart';
 
 class ContentService {
@@ -9,6 +11,129 @@ class ContentService {
   ContentService._();
 
   // Get live streaming content with real-time data
+  Future<List<Content>> getLiveStreamContentAsModels({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    try {
+      final client = SupabaseService.instance.client;
+
+      final response = await client
+          .from('content')
+          .select('''
+            id,
+            title,
+            description,
+            video_url,
+            thumbnail_url,
+            view_count,
+            like_count,
+            comment_count,
+            created_at,
+            updated_at,
+            type,
+            creator_id,
+            tags,
+            allows_comments,
+            allows_duets,
+            is_public,
+            featured,
+            share_count,
+            tip_count,
+            total_tips_amount,
+            user_profiles!creator_id (
+              id,
+              username,
+              full_name,
+              avatar_url,
+              verified,
+              clout_score,
+              followers_count
+            )
+          ''')
+          .eq('type', 'video')
+          .eq('is_public', true)
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
+
+      // Convert to Content models
+      return response.map((item) {
+        return Content.fromJson(item);
+      }).toList();
+    } catch (error) {
+      debugPrint('Error fetching content as models: $error');
+      // Return fallback content as models
+      return _getFallbackContentModels();
+    }
+  }
+
+  // Get content comments as Comment models
+  Future<List<Comment>> getContentCommentsAsModels(String contentId) async {
+    try {
+      final client = SupabaseService.instance.client;
+
+      final response = await client
+          .from('comments')
+          .select('''
+            id,
+            content_id,
+            user_id,
+            text_content,
+            like_count,
+            parent_comment_id,
+            created_at,
+            updated_at,
+            user_profiles!user_id (
+              id,
+              username,
+              full_name,
+              avatar_url,
+              verified
+            )
+          ''')
+          .eq('content_id', contentId)
+          .order('created_at', ascending: false)
+          .limit(50);
+
+      return response.map((comment) {
+        return Comment.fromJson(comment);
+      }).toList();
+    } catch (error) {
+      debugPrint('Error fetching comments as models: $error');
+      return [];
+    }
+  }
+
+  List<Content> _getFallbackContentModels() {
+    return [
+      Content(
+        id: 'demo-content-1',
+        creatorId: 'demo-user-1',
+        type: ContentType.video,
+        title: 'Welcome to Tam Tam!',
+        description:
+            'Create, Connect, and Earn with amazing video content. Join our community today!',
+        videoUrl:
+            'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+        thumbnailUrl: 'https://picsum.photos/400/600?random=1',
+        tags: ['welcome', 'tamtam', 'community'],
+        allowsComments: true,
+        allowsDuets: true,
+        viewCount: 50000,
+        likeCount: 2500,
+        commentCount: 180,
+        shareCount: 320,
+        featured: false,
+        isPublic: true,
+        tipCount: 15,
+        totalTipsAmount: 45.50,
+        createdAt: DateTime.now().subtract(Duration(hours: 2)),
+        updatedAt: DateTime.now().subtract(Duration(hours: 2)),
+      ),
+    ];
+  }
+
+  // Get live stream content with real-time data
   Future<List<Map<String, dynamic>>> getLiveStreamContent({
     int limit = 20,
     int offset = 0,
@@ -402,9 +527,11 @@ class ContentService {
   }
 
   // Static method for getting feed content
-  static Future<List<Map<String, dynamic>>> getFeedContent(
-      {int limit = 20, int offset = 0}) async {
-    return await instance.getLiveStreamContent(limit: limit, offset: offset);
+  static Future<List<Content>> getFeedContent(
+      {int limit = 20, int page = 0}) async {
+    final offset = page * limit;
+    return await instance.getLiveStreamContentAsModels(
+        limit: limit, offset: offset);
   }
 
   // Static method for reporting content
@@ -435,9 +562,8 @@ class ContentService {
   }
 
   // Static method for getting content comments
-  static Future<List<Map<String, dynamic>>> getContentComments(
-      String contentId) async {
-    return await instance.getLiveStreamComments(contentId);
+  static Future<List<Comment>> getContentComments(String contentId) async {
+    return await instance.getContentCommentsAsModels(contentId);
   }
 
   // Static method for adding comments

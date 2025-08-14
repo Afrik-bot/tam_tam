@@ -219,7 +219,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   }
 
   Future<void> _handleFollow() async {
-    if (!AuthService.isAuthenticated) {
+    if (!AuthService.instance.isAuthenticated) {
       _showAuthRequired();
       return;
     }
@@ -247,7 +247,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   }
 
   void _handleMessage() {
-    if (!AuthService.isAuthenticated) {
+    if (!AuthService.instance.isAuthenticated) {
       _showAuthRequired();
       return;
     }
@@ -272,7 +272,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   }
 
   void _handleTip() {
-    if (!AuthService.isAuthenticated) {
+    if (!AuthService.instance.isAuthenticated) {
       _showAuthRequired();
       return;
     }
