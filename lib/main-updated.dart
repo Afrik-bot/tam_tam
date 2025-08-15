@@ -22,7 +22,14 @@ void main() async {
   };
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Single Supabase initialization with proper error handling
+  // Initialize Supabase
+  try {
+    await SupabaseService.instance.initialize();
+  } catch (e) {
+    debugPrint('Failed to initialize Supabase: $e');
+  }
+
+  // FIXED: Single Supabase initialization with proper error handling
   try {
     await SupabaseService.instance.initialize();
     debugPrint('Supabase initialized successfully');

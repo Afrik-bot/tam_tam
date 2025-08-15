@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import './supabase_service.dart';
 
@@ -50,9 +51,205 @@ class AuthService {
   // Static accessors that existing code expects
   static User? get currentUser => _instance.user;
 
-  // FIXED: Add instance methods that login screen expects
+  // FIXED: Enhanced sign in method with improved connection and password handling
+  Future<AuthResponse> signIn({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      // Check network connectivity first
+      final hasConnection = await _checkNetworkConnectivity();
+      if (!hasConnection) {
+        throw AuthException(
+            'No internet connection. Please check your network settings and try again.');
+      }
+
+      // Check if Supabase is initialized
+      if (_supabase == null || !SupabaseService.instance.isInitialized) {
+        throw AuthException(
+            'Connection error. Please check your internet connection and try again.');
+      }
+
+      // Validate email and password format
+      if (email.trim().isEmpty) {
+        throw AuthException('Please enter your email address.');
+      }
+
+      if (!_isValidEmail(email.trim())) {
+        throw AuthException('Please enter a valid email address.');
+      }
+
+      if (password.isEmpty) {
+        throw AuthException('Please enter your password.');
+      }
+
+      if (password.length < 6) {
+        throw AuthException('Password must be at least 6 characters long.');
+      }
+
+      // Test connection to Supabase
+      final connectionTest = await SupabaseService.instance.testConnection();
+      if (!connectionTest) {
+        throw AuthException(
+            'Unable to connect to server. Please check your internet connection and try again.');
+      }
+
+      final response = await _supabase!.auth.signInWithPassword(
+        email: email.trim().toLowerCase(),
+        password: password,
+      );
+
+      // Additional validation
+      if (response.user == null) {
+        throw AuthException('Login failed. Please check your credentials.');
+      }
+
+      // If we get here without exception, login was successful
+      return response;
+    } on AuthException {
+      // Re-throw AuthException to preserve error details for UI
+      rethrow;
+    } catch (e) {
+      // Handle specific network and connection errors
+      final errorString = e.toString().toLowerCase();
+
+      if (errorString.contains('network') ||
+          errorString.contains('connection') ||
+          errorString.contains('timeout') ||
+          errorString.contains('socket') ||
+          errorString.contains('host lookup failed') ||
+          errorString.contains('no address associated with hostname')) {
+        throw AuthException(
+            'Connection error. Please check your internet connection and try again.');
+      }
+
+      if (errorString.contains('invalid login credentials') ||
+          errorString.contains('invalid email or password')) {
+        throw AuthException(
+            'Invalid email or password. Please check your credentials.');
+      }
+
+      if (errorString.contains('email not confirmed')) {
+        throw AuthException(
+            'Please check your email and click the confirmation link.');
+      }
+
+      if (errorString.contains('too many requests')) {
+        throw AuthException(
+            'Too many login attempts. Please wait a few minutes and try again.');
+      }
+
+      // Convert other errors to AuthException
+      throw AuthException('Login failed: Please try again.');
+    }
+  }
+
+  // Helper method to validate email format
+  bool _isValidEmail(String email) {
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9.]+@[a-zA-Z0-9]+\.[a-zA-Z]+',
+    );
+    return emailRegex.hasMatch(email);
+  }
+
+  // Sign up with email and password (instance method)
+  Future<AuthResponse> _signUp({
+    required String email,
+    required String password,
+    String? username,
+    String? fullName,
+    String? phoneNumber,
+    Map<String, dynamic>? userData,
+  }) async {
+    try {
+      if (_supabase == null) {
+        throw AuthException(
+            'Supabase not initialized. Please check your configuration.');
+      }
+
+      final response = await _supabase!.auth.signUp(
+        email: email.trim(),
+        password: password,
+        data: {
+          'username': username?.trim(),
+          'full_name': fullName?.trim() ?? username?.trim(),
+          'phone_number': phoneNumber?.trim(),
+          ...?userData,
+        },
+      );
+
+      return response;
+    } on AuthException {
+      rethrow;
+    } catch (e) {
+      throw AuthException('Sign up failed: ${e.toString()}');
+    }
+  }
+
+  // Reset password with enhanced error handling
+  Future<void> resetPassword({required String email}) async {
+    try {
+      // Check network connectivity first
+      final hasConnection = await _checkNetworkConnectivity();
+      if (!hasConnection) {
+        throw AuthException(
+            'No internet connection. Please check your network settings and try again.');
+      }
+
+      if (_supabase == null) {
+        throw AuthException(
+            'Connection error. Please check your internet connection and try again.');
+      }
+
+      if (email.trim().isEmpty) {
+        throw AuthException('Please enter your email address.');
+      }
+
+      if (!_isValidEmail(email.trim())) {
+        throw AuthException('Please enter a valid email address.');
+      }
+
+      await _supabase!.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        redirectTo: 'com.tam_tam.app://reset-password',
+      );
+    } on AuthException {
+      rethrow;
+    } catch (e) {
+      final errorString = e.toString().toLowerCase();
+
+      if (errorString.contains('network') ||
+          errorString.contains('connection') ||
+          errorString.contains('timeout')) {
+        throw AuthException(
+            'Connection error. Please check your internet connection and try again.');
+      }
+
+      throw AuthException('Password reset failed. Please try again.');
+    }
+  }
+
+  // FIXED: Enhanced network connectivity check
+  Future<bool> _checkNetworkConnectivity() async {
+    try {
+      final connectivityResult = await Connectivity().checkConnectivity();
+      return connectivityResult == ConnectivityResult.mobile ||
+          connectivityResult == ConnectivityResult.wifi ||
+          connectivityResult == ConnectivityResult.ethernet;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // FIXED: Enhanced social login methods with better error handling and connection checks
   Future<bool> signInWithGoogle() async {
     try {
+      // Check network connectivity first
+      final hasConnection = await _checkNetworkConnectivity();
+      if (!hasConnection) {
+        return false;
+      }
+
       if (_supabase == null) return false;
 
       final response = await _supabase!.auth.signInWithOAuth(
@@ -68,6 +265,12 @@ class AuthService {
 
   Future<bool> signInWithApple() async {
     try {
+      // Check network connectivity first
+      final hasConnection = await _checkNetworkConnectivity();
+      if (!hasConnection) {
+        return false;
+      }
+
       if (_supabase == null) return false;
 
       final response = await _supabase!.auth.signInWithOAuth(
@@ -78,67 +281,6 @@ class AuthService {
       return response;
     } catch (e) {
       return false; // Return false on error instead of rethrowing
-    }
-  }
-
-  // FIXED: Add the exact static method names the existing code expects
-  static Future<bool> signInWithGoogleStatic() async {
-    return await _instance._signInWithGoogle();
-  }
-
-  static Future<bool> signInWithAppleStatic() async {
-    return await _instance._signInWithApple();
-  }
-
-  // Sign in with email and password
-  Future<AuthResponse> signIn({
-    required String email,
-    required String password,
-  }) async {
-    try {
-      if (_supabase == null) {
-        throw Exception('Supabase not initialized');
-      }
-
-      final response = await _supabase!.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
-
-      return response;
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  // Sign up with email and password (instance method)
-  Future<AuthResponse> _signUp({
-    required String email,
-    required String password,
-    String? username,
-    String? fullName,
-    String? phoneNumber,
-    Map<String, dynamic>? userData,
-  }) async {
-    try {
-      if (_supabase == null) {
-        throw Exception('Supabase not initialized');
-      }
-
-      final response = await _supabase!.auth.signUp(
-        email: email,
-        password: password,
-        data: {
-          'username': username,
-          'full_name': fullName ?? username,
-          'phone_number': phoneNumber,
-          ...?userData,
-        },
-      );
-
-      return response;
-    } catch (e) {
-      rethrow;
     }
   }
 
@@ -148,51 +290,8 @@ class AuthService {
       if (_supabase == null) return;
       await _supabase!.auth.signOut();
     } catch (e) {
-      rethrow;
-    }
-  }
-
-  // Reset password
-  Future<void> resetPassword({required String email}) async {
-    try {
-      if (_supabase == null) {
-        throw Exception('Supabase not initialized');
-      }
-      await _supabase!.auth.resetPasswordForEmail(email);
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  // Sign in with Google (instance method)
-  Future<bool> _signInWithGoogle() async {
-    try {
-      if (_supabase == null) return false;
-
-      final response = await _supabase!.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: 'com.tam_tam.app://login-callback',
-      );
-
-      return response;
-    } catch (e) {
-      return false; // Return false on error instead of rethrowing
-    }
-  }
-
-  // Sign in with Apple (instance method)
-  Future<bool> _signInWithApple() async {
-    try {
-      if (_supabase == null) return false;
-
-      final response = await _supabase!.auth.signInWithOAuth(
-        OAuthProvider.apple,
-        redirectTo: 'com.tam_tam.app://login-callback',
-      );
-
-      return response;
-    } catch (e) {
-      return false; // Return false on error instead of rethrowing
+      // Silent failure for sign out
+      print('Sign out error: $e');
     }
   }
 
@@ -201,13 +300,10 @@ class AuthService {
     try {
       if (_supabase == null) return false;
 
-      final response = await _supabase!
-          .from('user_profiles')
-          .select('id')
-          .eq('username', username)
-          .maybeSingle();
+      final response = await _supabase!.rpc('is_username_available',
+          params: {'check_username': username.trim()});
 
-      return response == null; // Available if no user found
+      return response as bool? ?? false;
     } catch (e) {
       return false; // Assume unavailable on error
     }
@@ -216,11 +312,14 @@ class AuthService {
   // Get username suggestions (instance method)
   Future<List<String>> _getUsernameSuggestions(String baseUsername) async {
     try {
+      if (_supabase == null) return [];
+
       final suggestions = <String>[];
+      final cleanBase = baseUsername.trim().toLowerCase();
 
       // Generate variations of the username
       for (int i = 1; i <= 5; i++) {
-        final suggestion = '$baseUsername$i';
+        final suggestion = '$cleanBase$i';
         final isAvailable = await _checkUsernameAvailability(suggestion);
         if (isAvailable) {
           suggestions.add(suggestion);
@@ -231,7 +330,7 @@ class AuthService {
       if (suggestions.length < 3) {
         for (int i = 0; i < 3; i++) {
           final randomNum = DateTime.now().millisecondsSinceEpoch % 10000;
-          final suggestion = '$baseUsername$randomNum';
+          final suggestion = '$cleanBase$randomNum';
           final isAvailable = await _checkUsernameAvailability(suggestion);
           if (isAvailable && !suggestions.contains(suggestion)) {
             suggestions.add(suggestion);
@@ -253,7 +352,7 @@ class AuthService {
       final response = await _supabase!
           .from('user_profiles')
           .select('id')
-          .eq('email', email)
+          .eq('email', email.trim().toLowerCase())
           .maybeSingle();
 
       return response == null; // Available if no user found
@@ -271,9 +370,9 @@ class AuthService {
     }
   }
 
-  // Get user profile data
+  // Get user profile data with enhanced error handling
   Future<Map<String, dynamic>?> getUserProfile() async {
-    if (!isAuthenticated || _supabase == null) return null;
+    if (!isAuthenticated || _supabase == null || user == null) return null;
 
     try {
       final response = await _supabase!
@@ -284,11 +383,21 @@ class AuthService {
 
       return response;
     } catch (e) {
+      print('Error fetching user profile: $e');
       return null;
     }
   }
 
-  // Static getter for isAuthenticated - renamed to avoid conflict
+  // FIXED: Static method aliases for backward compatibility
+  static Future<bool> signInWithGoogleStatic() async {
+    return await _instance.signInWithGoogle();
+  }
+
+  static Future<bool> signInWithAppleStatic() async {
+    return await _instance.signInWithApple();
+  }
+
+  // Static getter for isAuthenticated
   static bool get isUserAuthenticated => _instance.isAuthenticated;
 
   // Static method for signing out

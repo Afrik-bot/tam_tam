@@ -1,16 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:sizer/sizer.dart';
 
 import '../../core/app_export.dart';
+import '../../services/wallet_service.dart';
 import './widgets/amount_input_widget.dart';
-import './widgets/currency_selector_widget.dart';
-import './widgets/qr_scanner_widget.dart';
 import './widgets/recent_recipients_widget.dart';
 import './widgets/recipient_input_widget.dart';
-import './widgets/transaction_details_widget.dart';
 
 class SendMoneyScreen extends StatefulWidget {
   const SendMoneyScreen({super.key});
@@ -20,17 +17,19 @@ class SendMoneyScreen extends StatefulWidget {
 }
 
 class _SendMoneyScreenState extends State<SendMoneyScreen> {
-  final TextEditingController _recipientController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
+  final TextEditingController _recipientController = TextEditingController();
   final LocalAuthentication _localAuth = LocalAuthentication();
 
   String _selectedCurrency = 'USD';
-  double _currentBalance = 2500.75;
-  bool _isValidRecipient = false;
+  bool _isLoading = false;
+  bool _isRequestMode = false;
   bool _isValidAmount = false;
-  bool _isProcessing = false;
+  bool _isValidRecipient = false;
   bool _showQRScanner = false;
+  double _currentBalance = 0.0;
 
   final Map<String, double> _exchangeRates = {
     'EUR': 0.85,
@@ -55,9 +54,10 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
 
   @override
   void dispose() {
-    _recipientController.dispose();
+    _usernameController.dispose();
     _amountController.dispose();
     _messageController.dispose();
+    _recipientController.dispose();
     super.dispose();
   }
 
@@ -118,7 +118,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
 
   void _onQRScanned(String scannedData) {
     setState(() {
-      _recipientController.text = scannedData;
+      _usernameController.text = scannedData;
       _showQRScanner = false;
       _isValidRecipient = _isValidRecipientFormat(scannedData);
     });
@@ -126,7 +126,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
 
   void _onRecipientSelected(Map<String, dynamic> recipient) {
     setState(() {
-      _recipientController.text = recipient['username'] as String;
+      _usernameController.text = recipient['username'] as String;
       _isValidRecipient = true;
     });
   }
@@ -144,12 +144,9 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
       }
 
       final bool didAuthenticate = await _localAuth.authenticate(
-        localizedReason: 'Please authenticate to send money',
-        options: const AuthenticationOptions(
-          biometricOnly: false,
-          stickyAuth: true,
-        ),
-      );
+          localizedReason: 'Please authenticate to send money',
+          options: const AuthenticationOptions(
+              biometricOnly: false, stickyAuth: true));
 
       return didAuthenticate;
     } catch (e) {
@@ -159,39 +156,29 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
 
   Future<bool> _showWebConfirmationDialog() async {
     return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: Text(
-              'Confirm Transaction',
-              style: AppTheme.lightTheme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Please confirm your transaction details:',
-                  style: AppTheme.lightTheme.textTheme.bodyMedium,
-                ),
-                SizedBox(height: 2.h),
-                _buildTransactionSummary(),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: Text('Confirm'),
-              ),
-            ],
-          ),
-        ) ??
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+                    title: Text('Confirm Transaction',
+                        style: AppTheme.lightTheme.textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Please confirm your transaction details:',
+                              style: AppTheme.lightTheme.textTheme.bodyMedium),
+                          SizedBox(height: 2.h),
+                          _buildTransactionSummary(),
+                        ]),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: Text('Cancel')),
+                      ElevatedButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: Text('Confirm')),
+                    ])) ??
         false;
   }
 
@@ -201,19 +188,16 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     final total = amount + fee;
 
     return Container(
-      padding: EdgeInsets.all(3.w),
-      decoration: BoxDecoration(
-        color: AppTheme.lightTheme.colorScheme.primaryContainer
-            .withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: AppTheme.lightTheme.colorScheme.primary.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('To: ${_recipientController.text}',
+        padding: EdgeInsets.all(3.w),
+        decoration: BoxDecoration(
+            color: AppTheme.lightTheme.colorScheme.primaryContainer
+                .withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+                color: AppTheme.lightTheme.colorScheme.primary
+                    .withValues(alpha: 0.2))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('To: ${_usernameController.text}',
               style: AppTheme.lightTheme.textTheme.bodySmall),
           Text(
               'Amount: ${_getCurrencySymbol(_selectedCurrency)}${amount.toStringAsFixed(2)}',
@@ -226,9 +210,7 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
               'Total: ${_getCurrencySymbol(_selectedCurrency)}${total.toStringAsFixed(2)}',
               style: AppTheme.lightTheme.textTheme.bodyMedium
                   ?.copyWith(fontWeight: FontWeight.w600)),
-        ],
-      ),
-    );
+        ]));
   }
 
   double _calculateTransactionFee(double amount) {
@@ -267,341 +249,375 @@ class _SendMoneyScreenState extends State<SendMoneyScreen> {
     }
   }
 
-  Future<void> _processSendMoney() async {
-    if (!_isValidRecipient || !_isValidAmount || _isProcessing) return;
+  Future<void> _sendMoney() async {
+    if (!_validateForm()) return;
 
     setState(() {
-      _isProcessing = true;
+      _isLoading = true;
     });
 
     try {
-      // Authenticate user
-      final authenticated = await _authenticateUser();
-      if (!authenticated) {
-        setState(() {
-          _isProcessing = false;
-        });
-        return;
+      final amount = double.parse(_amountController.text);
+      final username = _usernameController.text.trim();
+      final message = _messageController.text.trim();
+
+      if (_isRequestMode) {
+        await WalletService.instance.requestMoney(
+            recipientUsername: username,
+            amount: amount,
+            currency: _selectedCurrency.toLowerCase(),
+            message: message.isEmpty ? null : message);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Money request sent successfully!"),
+                  backgroundColor: Colors.green));
+        }
+      } else {
+        await WalletService.instance.sendMoney(
+            recipientUsername: username,
+            amount: amount,
+            currency: _selectedCurrency.toLowerCase(),
+            message: message.isEmpty ? null : message);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Money sent successfully!"),
+                  backgroundColor: Colors.green));
+        }
       }
 
-      // Simulate transaction processing
-      await Future.delayed(const Duration(seconds: 3));
-
-      // Show success dialog
-      await _showSuccessDialog();
-
-      // Reset form
-      _resetForm();
-    } catch (e) {
-      _showErrorDialog('Transaction failed. Please try again.');
-    } finally {
-      setState(() {
-        _isProcessing = false;
-      });
-    }
-  }
-
-  void _resetForm() {
-    setState(() {
-      _recipientController.clear();
+      _usernameController.clear();
       _amountController.clear();
       _messageController.clear();
-      _isValidRecipient = false;
-      _isValidAmount = false;
+      Navigator.pop(context);
+    } catch (e) {
+      String errorMessage = e.toString().replaceAll('Exception: ', '');
+
+      if (errorMessage.contains('Insufficient balance')) {
+        errorMessage =
+            'Insufficient balance. Please add money to your wallet first.';
+      } else if (errorMessage.contains('Recipient not found') ||
+          errorMessage.contains('User not found')) {
+        errorMessage =
+            'User not found. Please check the username and try again.';
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMessage),
+                backgroundColor: Colors.red));
+      }
+    }
+
+    setState(() {
+      _isLoading = false;
     });
   }
 
-  Future<void> _showSuccessDialog() async {
-    final transactionId = 'TXN${DateTime.now().millisecondsSinceEpoch}';
+  bool _validateForm() {
+    if (_usernameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Please enter recipient username"), 
+              backgroundColor: Colors.red));
+      return false;
+    }
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 20.w,
-              height: 20.w,
-              decoration: BoxDecoration(
-                color: AppTheme.lightTheme.colorScheme.primary
-                    .withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: CustomIconWidget(
-                iconName: 'check_circle',
-                color: AppTheme.lightTheme.colorScheme.primary,
-                size: 48,
-              ),
-            ),
-            SizedBox(height: 3.h),
-            Text(
-              'Transaction Successful!',
-              style: AppTheme.lightTheme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 2.h),
-            Text(
-              'Your money has been sent successfully.',
-              style: AppTheme.lightTheme.textTheme.bodyMedium?.copyWith(
-                color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 2.h),
-            Container(
-              padding: EdgeInsets.all(3.w),
-              decoration: BoxDecoration(
-                color: AppTheme.lightTheme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppTheme.lightTheme.colorScheme.outline
-                      .withValues(alpha: 0.2),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    'Transaction ID',
-                    style: AppTheme.lightTheme.textTheme.labelSmall?.copyWith(
-                      color: AppTheme.lightTheme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  SizedBox(height: 0.5.h),
-                  Text(
-                    transactionId,
-                    style: AppTheme.lightTheme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: transactionId));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Transaction ID copied to clipboard')),
-              );
-            },
-            child: Text('Copy ID'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Done'),
-          ),
-        ],
-      ),
-    );
+    if (_amountController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Please enter amount"), 
+              backgroundColor: Colors.red));
+      return false;
+    }
+
+    final amount = double.tryParse(_amountController.text);
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Please enter a valid amount"), 
+              backgroundColor: Colors.red));
+      return false;
+    }
+
+    if (amount > 10000) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Amount cannot exceed \$10,000"), 
+              backgroundColor: Colors.red));
+      return false;
+    }
+
+    return true;
   }
-
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  bool get _canSendMoney =>
-      _isValidRecipient && _isValidAmount && !_isProcessing;
 
   @override
   Widget build(BuildContext context) {
-    if (_showQRScanner) {
-      return Scaffold(
-        body: QRScannerWidget(
-          onQRScanned: _onQRScanned,
-          onClose: () {
-            setState(() {
-              _showQRScanner = false;
-            });
-          },
-        ),
-      );
-    }
-
     return Scaffold(
-      backgroundColor: AppTheme.lightTheme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          'Send Money',
-          style: AppTheme.lightTheme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: EdgeInsets.all(2.w),
-            decoration: BoxDecoration(
-              color: AppTheme.lightTheme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: AppTheme.lightTheme.colorScheme.outline
-                    .withValues(alpha: 0.2),
-              ),
-            ),
-            child: CustomIconWidget(
-              iconName: 'arrow_back',
-              color: AppTheme.lightTheme.colorScheme.onSurface,
-              size: 20,
-            ),
-          ),
-        ),
-        actions: [
-          GestureDetector(
-            onTap: () {
-              Navigator.pushNamed(context, '/crypto-wallet-dashboard');
-            },
-            child: Container(
-              margin: EdgeInsets.only(right: 4.w),
-              padding: EdgeInsets.all(2.w),
-              decoration: BoxDecoration(
-                color: AppTheme.lightTheme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppTheme.lightTheme.colorScheme.outline
-                      .withValues(alpha: 0.2),
-                ),
-              ),
-              child: CustomIconWidget(
-                iconName: 'account_balance_wallet',
-                color: AppTheme.lightTheme.colorScheme.primary,
-                size: 20,
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
-        child: Column(
-          children: [
-            // Currency Selector
-            CurrencySelectorWidget(
-              selectedCurrency: _selectedCurrency,
-              balance: _currentBalance,
-              exchangeRates: _exchangeRates,
-              onCurrencyChanged: _onCurrencyChanged,
-            ),
-            SizedBox(height: 3.h),
+        backgroundColor: AppTheme.lightTheme.scaffoldBackgroundColor,
+        appBar: AppBar(
+            backgroundColor: AppTheme.lightTheme.colorScheme.surface,
+            elevation: 0,
+            leading: IconButton(
+                icon: CustomIconWidget(
+                    iconName: 'arrow_back',
+                    color: AppTheme.lightTheme.colorScheme.onSurface,
+                    size: 6.w),
+                onPressed: () => Navigator.pop(context)),
+            title: Text(_isRequestMode ? 'Request Money' : 'Send Money',
+                style: AppTheme.lightTheme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.lightTheme.colorScheme.onSurface)),
+            actions: [
+              // Toggle between send and request
+              TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _isRequestMode = !_isRequestMode;
+                    });
+                  },
+                  child: Text(_isRequestMode ? 'Send' : 'Request',
+                      style: TextStyle(
+                          color: AppTheme.lightTheme.colorScheme.primary,
+                          fontWeight: FontWeight.w600))),
+            ]),
+        body: SafeArea(
+            child: SingleChildScrollView(
+                padding: EdgeInsets.all(4.w),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Mode indicator
+                      Container(
+                          width: double.infinity,
+                          padding: EdgeInsets.all(4.w),
+                          decoration: BoxDecoration(
+                              color: _isRequestMode
+                                  ? Colors.blue.withValues(alpha: 0.1)
+                                  : AppTheme.lightTheme.colorScheme.primary
+                                      .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: _isRequestMode
+                                      ? Colors.blue.withValues(alpha: 0.3)
+                                      : AppTheme.lightTheme.colorScheme.primary
+                                          .withValues(alpha: 0.3))),
+                          child: Row(children: [
+                            CustomIconWidget(
+                                iconName:
+                                    _isRequestMode ? 'request_quote' : 'send',
+                                color: _isRequestMode
+                                    ? Colors.blue
+                                    : AppTheme.lightTheme.colorScheme.primary,
+                                size: 6.w),
+                            SizedBox(width: 3.w),
+                            Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                  Text(
+                                      _isRequestMode
+                                          ? 'Request Mode'
+                                          : 'Send Mode',
+                                      style: AppTheme
+                                          .lightTheme.textTheme.titleMedium
+                                          ?.copyWith(
+                                              color: _isRequestMode
+                                                  ? Colors.blue
+                                                  : AppTheme.lightTheme
+                                                      .colorScheme.primary,
+                                              fontWeight: FontWeight.w600)),
+                                  Text(
+                                      _isRequestMode
+                                          ? 'Ask someone to send you money'
+                                          : 'Send money to another user',
+                                      style: AppTheme
+                                          .lightTheme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                              color: AppTheme
+                                                  .lightTheme
+                                                  .colorScheme
+                                                  .onSurfaceVariant)),
+                                ])),
+                          ])),
 
-            // Recent Recipients
-            RecentRecipientsWidget(
-              onRecipientSelected: _onRecipientSelected,
-            ),
-            SizedBox(height: 3.h),
+                      SizedBox(height: 4.h),
 
-            // Recipient Input
-            RecipientInputWidget(
-              controller: _recipientController,
-              onQRScan: () {
-                setState(() {
-                  _showQRScanner = true;
-                });
-              },
-              onRecipientChanged: _onRecipientChanged,
-            ),
-            SizedBox(height: 3.h),
+                      // Recipient input
+                      RecipientInputWidget(
+                          controller: _usernameController,
+                          onQRScan: _onQRScanned,
+                          onRecipientChanged: _onRecipientChanged),
 
-            // Amount Input
-            AmountInputWidget(
-              controller: _amountController,
-              selectedCurrency: _selectedCurrency,
-              exchangeRates: _exchangeRates,
-              onAmountChanged: _onAmountChanged,
-            ),
-            SizedBox(height: 3.h),
+                      SizedBox(height: 3.h),
 
-            // Transaction Details
-            TransactionDetailsWidget(
-              messageController: _messageController,
-              selectedCurrency: _selectedCurrency,
-              amount: double.tryParse(_amountController.text) ?? 0.0,
-              onMessageChanged: _onMessageChanged,
-            ),
-            SizedBox(height: 4.h),
+                      // Amount input
+                      AmountInputWidget(
+                          controller: _amountController,
+                          selectedCurrency: _selectedCurrency,
+                          exchangeRates: _exchangeRates,
+                          onAmountChanged: _onAmountChanged),
 
-            // Send Button
-            Container(
-              width: double.infinity,
-              height: 6.h,
-              child: ElevatedButton(
-                onPressed: _canSendMoney ? _processSendMoney : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _canSendMoney
-                      ? AppTheme.lightTheme.colorScheme.primary
-                      : AppTheme.lightTheme.colorScheme.onSurfaceVariant
-                          .withValues(alpha: 0.3),
-                  foregroundColor: Colors.white,
-                  elevation: _canSendMoney ? 2 : 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: _isProcessing
-                    ? Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 5.w,
-                            height: 5.w,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          ),
-                          SizedBox(width: 3.w),
-                          Text(
-                            'Processing...',
+                      SizedBox(height: 3.h),
+
+                      // Message input
+                      TextField(
+                          controller: _messageController,
+                          decoration: InputDecoration(
+                              labelText: 'Message (optional)',
+                              hintText: _isRequestMode
+                                  ? 'Why are you requesting money?'
+                                  : 'Add a note for this transfer...',
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                      color: AppTheme
+                                          .lightTheme.colorScheme.outline)),
+                              enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                      color: AppTheme
+                                          .lightTheme.colorScheme.outline
+                                          .withValues(alpha: 0.3))),
+                              focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(
+                                      color: AppTheme
+                                          .lightTheme.colorScheme.primary,
+                                      width: 2)),
+                              prefixIcon: CustomIconWidget(
+                                  iconName: 'message',
+                                  color: AppTheme
+                                      .lightTheme.colorScheme.onSurfaceVariant,
+                                  size: 5.w)),
+                          maxLines: 3,
+                          maxLength: 200,
+                          textCapitalization: TextCapitalization.sentences),
+
+                      SizedBox(height: 4.h),
+
+                      // Send/Request button
+                      Container(
+                          width: double.infinity,
+                          height: 6.h,
+                          child: ElevatedButton(
+                              onPressed: _isLoading ? null : _sendMoney,
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: _isRequestMode
+                                      ? Colors.blue
+                                      : AppTheme.lightTheme.colorScheme.primary,
+                                  foregroundColor: Colors.white,
+                                  elevation: 3,
+                                  shadowColor: (_isRequestMode
+                                          ? Colors.blue
+                                          : AppTheme
+                                              .lightTheme.colorScheme.primary)
+                                      .withValues(alpha: 0.3),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                  disabledBackgroundColor: AppTheme
+                                      .lightTheme.colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.3)),
+                              child: _isLoading
+                                  ? Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                          SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<
+                                                              Color>(
+                                                          Colors.white))),
+                                          SizedBox(width: 3.w),
+                                          Text(
+                                              _isRequestMode
+                                                  ? 'Requesting...'
+                                                  : 'Sending...',
+                                              style: AppTheme.lightTheme
+                                                  .textTheme.titleMedium
+                                                  ?.copyWith(
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.w600)),
+                                        ])
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                          CustomIconWidget(
+                                              iconName: _isRequestMode
+                                                  ? 'request_quote'
+                                                  : 'send',
+                                              color: Colors.white,
+                                              size: 5.w),
+                                          SizedBox(width: 2.w),
+                                          Text(
+                                              _isRequestMode
+                                                  ? 'Send Request'
+                                                  : 'Send Money',
+                                              style: AppTheme.lightTheme
+                                                  .textTheme.titleMedium
+                                                  ?.copyWith(
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.w600)),
+                                        ]))),
+
+                      SizedBox(height: 3.h),
+
+                      // Recent recipients (keep existing implementation)
+                      if (!_isRequestMode) ...[
+                        Text('Recent Recipients',
                             style: AppTheme.lightTheme.textTheme.titleMedium
-                                ?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CustomIconWidget(
-                            iconName: 'send',
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          SizedBox(width: 2.w),
-                          Text(
-                            'Send Money',
+                                ?.copyWith(fontWeight: FontWeight.w600)),
+                        SizedBox(height: 2.h),
+                        RecentRecipientsWidget(
+                            onRecipientSelected: (recipient) {
+                          setState(() {
+                            _usernameController.text =
+                                recipient['username'] ?? '';
+                          });
+                        }),
+                      ],
+
+                      // Quick request amounts for request mode
+                      if (_isRequestMode) ...[
+                        Text('Quick Amounts',
                             style: AppTheme.lightTheme.textTheme.titleMedium
-                                ?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-            SizedBox(height: 2.h),
-          ],
-        ),
-      ),
-    );
+                                ?.copyWith(fontWeight: FontWeight.w600)),
+                        SizedBox(height: 2.h),
+                        Wrap(
+                            spacing: 2.w,
+                            runSpacing: 1.h,
+                            children: [10, 25, 50, 100, 250, 500].map((amount) {
+                              return GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _amountController.text =
+                                          amount.toString();
+                                    });
+                                  },
+                                  child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal: 4.w, vertical: 1.h),
+                                      decoration: BoxDecoration(
+                                          color: AppTheme
+                                              .lightTheme.colorScheme.surface,
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          border: Border.all(
+                                              color: AppTheme.lightTheme
+                                                  .colorScheme.outline
+                                                  .withValues(alpha: 0.3))),
+                                      child: Text('\$${amount}',
+                                          style: AppTheme.lightTheme.textTheme.labelLarge
+                                              ?.copyWith(
+                                                  color: AppTheme.lightTheme
+                                                      .colorScheme.onSurface,
+                                                  fontWeight: FontWeight.w500))));
+                            }).toList()),
+                      ],
+                    ]))));
   }
 }

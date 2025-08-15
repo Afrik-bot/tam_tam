@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 
 import '../../../core/app_export.dart';
+import './qr_scanner_widget.dart';
 
 class RecipientInputWidget extends StatefulWidget {
   final TextEditingController controller;
-  final Function() onQRScan;
+  final Function(String) onQRScan;
   final Function(String) onRecipientChanged;
 
   const RecipientInputWidget({
@@ -47,6 +48,23 @@ class _RecipientInputWidgetState extends State<RecipientInputWidget> {
       });
     }
     widget.onRecipientChanged(text);
+  }
+
+  void _openQRScanner() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => QRScannerWidget(
+          onQRScanned: (scannedData) {
+            widget.onQRScan(scannedData);
+            Navigator.of(context).pop();
+          },
+          onClose: () {
+            Navigator.of(context).pop();
+          },
+        ),
+        fullscreenDialog: true,
+      ),
+    );
   }
 
   bool _isValidEmail(String text) {
@@ -196,7 +214,7 @@ class _RecipientInputWidgetState extends State<RecipientInputWidget> {
                       SizedBox(width: 2.w),
                     ],
                     GestureDetector(
-                      onTap: widget.onQRScan,
+                      onTap: _openQRScanner,
                       child: Container(
                         padding: EdgeInsets.all(2.w),
                         decoration: BoxDecoration(

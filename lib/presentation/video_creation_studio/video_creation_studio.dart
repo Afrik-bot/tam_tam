@@ -1,10 +1,13 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sizer/sizer.dart';
 
 import '../../core/app_export.dart';
+import '../../services/auth_service.dart';
+import '../../services/video_upload_service.dart';
 import './widgets/audio_library_widget.dart';
 import './widgets/camera_controls_widget.dart';
 import './widgets/effects_grid_widget.dart';
@@ -28,6 +31,11 @@ class _VideoCreationStudioState extends State<VideoCreationStudio>
   bool _isFlashOn = false;
   int _timerSeconds = 0;
   bool _isCollaborationMode = false;
+
+  // Video upload related
+  XFile? _selectedVideo;
+  bool _isUploading = false;
+  double _uploadProgress = 0.0;
 
   // Video editing state
   double _videoDuration = 60.0; // Default 60 seconds
@@ -128,6 +136,220 @@ class _VideoCreationStudioState extends State<VideoCreationStudio>
           _isCameraInitialized = false;
         });
       }
+    }
+  }
+
+  // Pick video from gallery
+  Future<void> _pickVideoFromGallery() async {
+    try {
+      final video =
+          await VideoUploadService.instance.pickVideo(fromCamera: false);
+      if (video != null) {
+        setState(() {
+          _selectedVideo = video;
+        });
+
+        // Validate video file
+        if (!VideoUploadService.instance.validateVideoFile(video)) {
+          Fluttertoast.showToast(
+            msg: "Invalid video file. Please select a valid video.",
+            backgroundColor: Colors.red,
+          );
+          setState(() {
+            _selectedVideo = null;
+          });
+          return;
+        }
+
+        Fluttertoast.showToast(
+          msg: "Video selected successfully!",
+          backgroundColor: Colors.green,
+        );
+      }
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: "Failed to select video: ${e.toString()}",
+        backgroundColor: Colors.red,
+      );
+    }
+  }
+
+  // Record video with camera
+  Future<void> _recordVideo() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      Fluttertoast.showToast(
+        msg: "Camera not ready",
+        backgroundColor: Colors.red,
+      );
+      return;
+    }
+
+    try {
+      if (_isRecording) {
+        // Stop recording
+        final video = await _cameraController!.stopVideoRecording();
+        setState(() {
+          _isRecording = false;
+          _selectedVideo = video;
+        });
+
+        Fluttertoast.showToast(
+          msg: "Video recorded successfully!",
+          backgroundColor: Colors.green,
+        );
+      } else {
+        // Start recording
+        await _cameraController!.startVideoRecording();
+        setState(() {
+          _isRecording = true;
+        });
+
+        Fluttertoast.showToast(
+          msg: "Recording started...",
+          backgroundColor: Colors.blue,
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isRecording = false;
+      });
+
+      Fluttertoast.showToast(
+        msg: "Recording failed: ${e.toString()}",
+        backgroundColor: Colors.red,
+      );
+    }
+  }
+
+  void _publishVideo() async {
+    if (!AuthService.instance.isAuthenticated) {
+      Fluttertoast.showToast(
+        msg: "Please sign in to upload videos",
+        backgroundColor: Colors.red,
+      );
+      return;
+    }
+
+    if (_selectedVideo == null) {
+      Fluttertoast.showToast(
+        msg: "Please record or select a video first",
+        backgroundColor: Colors.red,
+      );
+      return;
+    }
+
+    // Show upload dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Upload Video'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'Title',
+                hintText: 'Enter video title...',
+              ),
+              onChanged: (value) => _videoTitle = value,
+            ),
+            SizedBox(height: 2.h),
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'Description',
+                hintText: 'Enter video description...',
+              ),
+              maxLines: 3,
+              onChanged: (value) => _videoDescription = value,
+            ),
+            SizedBox(height: 2.h),
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'Tags (comma separated)',
+                hintText: 'fun, dance, trending...',
+              ),
+              onChanged: (value) => _videoTags = value,
+            ),
+            if (_isUploading) ...[
+              SizedBox(height: 2.h),
+              LinearProgressIndicator(value: _uploadProgress),
+              Text('Uploading... ${(_uploadProgress * 100).toInt()}%'),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _isUploading ? null : () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: _isUploading ? null : _handleVideoUpload,
+            child: Text(_isUploading ? 'Uploading...' : 'Upload'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _videoTitle = '';
+  String _videoDescription = '';
+  String _videoTags = '';
+
+  Future<void> _handleVideoUpload() async {
+    if (_selectedVideo == null) return;
+
+    setState(() {
+      _isUploading = true;
+      _uploadProgress = 0.0;
+    });
+
+    try {
+      final user = AuthService.instance.user;
+      if (user == null) throw Exception('User not authenticated');
+
+      // Parse tags
+      List<String> tags = _videoTags
+          .split(',')
+          .map((tag) => tag.trim())
+          .where((tag) => tag.isNotEmpty)
+          .toList();
+
+      // Upload video
+      final contentId = await VideoUploadService.instance.uploadVideo(
+        videoFile: _selectedVideo!,
+        userId: user.id,
+        title: _videoTitle.isEmpty ? 'My Video' : _videoTitle,
+        description: _videoDescription,
+        tags: tags,
+      );
+
+      setState(() {
+        _isUploading = false;
+        _uploadProgress = 1.0;
+      });
+
+      Navigator.pop(context); // Close upload dialog
+
+      Fluttertoast.showToast(
+        msg: "Video uploaded successfully! It will appear in the main feed.",
+        backgroundColor: Colors.green,
+        toastLength: Toast.LENGTH_LONG,
+      );
+
+      // Navigate back to main feed
+      Navigator.pushReplacementNamed(context, '/main-video-feed');
+    } catch (e) {
+      setState(() {
+        _isUploading = false;
+        _uploadProgress = 0.0;
+      });
+
+      Fluttertoast.showToast(
+        msg: "Upload failed: ${e.toString()}",
+        backgroundColor: Colors.red,
+        toastLength: Toast.LENGTH_LONG,
+      );
     }
   }
 
@@ -504,52 +726,6 @@ class _VideoCreationStudioState extends State<VideoCreationStudio>
     );
   }
 
-  void _publishVideo() {
-    if (_textElements.isEmpty &&
-        _selectedStickers.isEmpty &&
-        _selectedEffect == null &&
-        _selectedSound == null) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('No Content Added'),
-          content: Text(
-              'Add some effects, text, stickers, or audio to your video before publishing.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Continue Editing'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Publish Video'),
-        content: Text(
-            'Your video is ready to publish! This will take you to the publishing screen where you can add captions, tags, and share settings.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Continue Editing'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Navigate to publishing screen
-              Navigator.pushNamed(context, '/main-video-feed');
-            },
-            child: Text('Publish'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -735,42 +911,135 @@ class _VideoCreationStudioState extends State<VideoCreationStudio>
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(16),
-                                child: _selectedTabIndex == 0 &&
-                                        _isCameraInitialized &&
-                                        _cameraController != null
-                                    ? AspectRatio(
-                                        aspectRatio: 9 /
-                                            16, // Vertical video aspect ratio
-                                        child:
-                                            CameraPreview(_cameraController!),
-                                      )
-                                    : Container(
-                                        color: Colors.black,
-                                        child: Center(
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              CustomIconWidget(
-                                                iconName: 'videocam',
-                                                size: 15.w,
-                                                color: Colors.white
-                                                    .withValues(alpha: 0.7),
+                                child: _selectedVideo != null
+                                    ? Stack(
+                                        children: [
+                                          Container(
+                                            color: Colors.black,
+                                            child: Center(
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  CustomIconWidget(
+                                                    iconName: 'video_file',
+                                                    size: 15.w,
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.7),
+                                                  ),
+                                                  SizedBox(height: 2.h),
+                                                  Text(
+                                                    'Video Selected',
+                                                    style: AppTheme.lightTheme
+                                                        .textTheme.titleMedium
+                                                        ?.copyWith(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                              alpha: 0.7),
+                                                    ),
+                                                  ),
+                                                  SizedBox(height: 1.h),
+                                                  Text(
+                                                    'Ready to upload!',
+                                                    style: AppTheme.lightTheme
+                                                        .textTheme.bodyMedium
+                                                        ?.copyWith(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                              alpha: 0.5),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                              SizedBox(height: 2.h),
-                                              Text(
-                                                'Video Preview',
-                                                style: AppTheme.lightTheme
-                                                    .textTheme.titleMedium
-                                                    ?.copyWith(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.7),
-                                                ),
-                                              ),
-                                            ],
+                                            ),
                                           ),
-                                        ),
-                                      ),
+                                        ],
+                                      )
+                                    : _selectedTabIndex == 0 &&
+                                            _isCameraInitialized &&
+                                            _cameraController != null
+                                        ? Stack(
+                                            children: [
+                                              AspectRatio(
+                                                aspectRatio: 9 /
+                                                    16, // Vertical video aspect ratio
+                                                child: CameraPreview(
+                                                    _cameraController!),
+                                              ),
+                                              if (_isRecording)
+                                                Positioned(
+                                                  top: 2.h,
+                                                  left: 4.w,
+                                                  child: Container(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                      horizontal: 3.w,
+                                                      vertical: 1.h,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.red,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              20),
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Container(
+                                                          width: 2.w,
+                                                          height: 2.w,
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            color: Colors.white,
+                                                            shape:
+                                                                BoxShape.circle,
+                                                          ),
+                                                        ),
+                                                        SizedBox(width: 2.w),
+                                                        Text(
+                                                          'REC',
+                                                          style: TextStyle(
+                                                            color: Colors.white,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            fontSize: 12.sp,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          )
+                                        : Container(
+                                            color: Colors.black,
+                                            child: Center(
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  CustomIconWidget(
+                                                    iconName: 'videocam',
+                                                    size: 15.w,
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.7),
+                                                  ),
+                                                  SizedBox(height: 2.h),
+                                                  Text(
+                                                    'Video Preview',
+                                                    style: AppTheme.lightTheme
+                                                        .textTheme.titleMedium
+                                                        ?.copyWith(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                              alpha: 0.7),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
                               ),
                             ),
                           ),
@@ -870,9 +1139,9 @@ class _VideoCreationStudioState extends State<VideoCreationStudio>
               ),
             ),
 
-            // Bottom action bar
+            // Bottom action bar with enhanced options
             Container(
-              height: 10.h,
+              height: 12.h,
               padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
               decoration: BoxDecoration(
                 color: AppTheme.lightTheme.colorScheme.surface,
@@ -883,57 +1152,116 @@ class _VideoCreationStudioState extends State<VideoCreationStudio>
                   ),
                 ),
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: Container(
-                      height: 6.h,
-                      decoration: BoxDecoration(
-                        color: AppTheme.lightTheme.colorScheme.outline
-                            .withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Duration: ${_formatDuration(_videoDuration)}',
-                          style: AppTheme.lightTheme.textTheme.bodyMedium
-                              ?.copyWith(
-                            color: AppTheme
-                                .lightTheme.colorScheme.onSurfaceVariant,
+                  Row(
+                    children: [
+                      // Gallery button
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _pickVideoFromGallery,
+                          child: Container(
+                            height: 5.h,
+                            decoration: BoxDecoration(
+                              color: AppTheme.lightTheme.colorScheme.outline
+                                  .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                CustomIconWidget(
+                                  iconName: 'photo_library',
+                                  size: 4.w,
+                                  color:
+                                      AppTheme.lightTheme.colorScheme.primary,
+                                ),
+                                SizedBox(width: 2.w),
+                                Text(
+                                  'Gallery',
+                                  style: AppTheme
+                                      .lightTheme.textTheme.labelMedium
+                                      ?.copyWith(
+                                    color:
+                                        AppTheme.lightTheme.colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                  SizedBox(width: 4.w),
-                  GestureDetector(
-                    onTap: _publishVideo,
-                    child: Container(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
-                      decoration: BoxDecoration(
-                        color: AppTheme.lightTheme.colorScheme.primary,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Next',
-                            style: AppTheme.lightTheme.textTheme.labelLarge
-                                ?.copyWith(
-                              color: AppTheme.lightTheme.colorScheme.onPrimary,
-                              fontWeight: FontWeight.w600,
+                      SizedBox(width: 2.w),
+                      // Record button
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _recordVideo,
+                          child: Container(
+                            height: 5.h,
+                            decoration: BoxDecoration(
+                              color: _isRecording
+                                  ? Colors.red
+                                  : AppTheme.lightTheme.colorScheme.secondary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                CustomIconWidget(
+                                  iconName: _isRecording ? 'stop' : 'videocam',
+                                  size: 4.w,
+                                  color: Colors.white,
+                                ),
+                                SizedBox(width: 2.w),
+                                Text(
+                                  _isRecording ? 'Stop' : 'Record',
+                                  style: AppTheme
+                                      .lightTheme.textTheme.labelMedium
+                                      ?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          SizedBox(width: 2.w),
-                          CustomIconWidget(
-                            iconName: 'arrow_forward',
-                            size: 4.w,
-                            color: AppTheme.lightTheme.colorScheme.onPrimary,
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
+                      SizedBox(width: 4.w),
+                      // Upload button
+                      GestureDetector(
+                        onTap: _publishVideo,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 8.w, vertical: 2.h),
+                          decoration: BoxDecoration(
+                            color: AppTheme.lightTheme.colorScheme.primary,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                'Upload',
+                                style: AppTheme.lightTheme.textTheme.labelLarge
+                                    ?.copyWith(
+                                  color:
+                                      AppTheme.lightTheme.colorScheme.onPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              SizedBox(width: 2.w),
+                              CustomIconWidget(
+                                iconName: 'cloud_upload',
+                                size: 4.w,
+                                color:
+                                    AppTheme.lightTheme.colorScheme.onPrimary,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
